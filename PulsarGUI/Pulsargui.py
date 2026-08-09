@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Iterable
-import tempfile
 
-import sys
-import os
+import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.table import Table, vstack
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 PHOTON_REQUIRED_COLUMNS = {"TIME", "RA", "DEC", "ENERGY"}
 def validate_par_file(path: str | Path) -> tuple[bool, str]:
@@ -27,23 +42,25 @@ def validate_par_file(path: str | Path) -> tuple[bool, str]:
 
     return True, "Archivo PAR válido para la validación inicial del Sprint 2."
 
+def _get_hdu1_columns(path: str | Path) -> tuple[bool, set[str] | None, str]:
+    file_path = Path(path)
 
+    if not file_path.exists() or not file_path.is_file():
+        return False, None, "El archivo FITS no existe."
+    if file_path.suffix.lower() not in {".fits", ".fit"}:
+        return False, None, "El archivo seleccionado no tiene extensión FITS."
 
-import matplotlib.pyplot as plt
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import (
-    QApplication,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QMessageBox,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
-
+    try:
+        with fits.open(file_path, memmap=False) as hdul:
+            if len(hdul) < 2:
+                return False, None, "El FITS no contiene una extensión HDU 1 con datos tabulares."
+            columns = getattr(hdul[1], "columns", None)
+            if columns is None or columns.names is None:
+                return False, None, "La HDU 1 del FITS no contiene columnas tabulares."
+            names = {str(name).upper() for name in columns.names}
+            return True, names, "FITS legible."
+    except Exception as exc:
+        return False, None, f"No se pudo leer el FITS: {exc}"
 
 
   
