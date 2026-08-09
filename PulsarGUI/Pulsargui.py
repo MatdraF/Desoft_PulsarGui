@@ -134,5 +134,22 @@ def merge_event_fits(
 
     return output
 
-  
+def build_fermiphase_command(fits_path: str | Path, par_path: str | Path) -> list[str]:
+    """Construye el comando utilizado para calcular/agregar PULSE_PHASE con PINT."""
+    return [
+        "fermiphase",
+        "--addphase",
+        str(fits_path),
+        str(par_path),
+        "CALC",
+    ]
+
+
+def has_column(path: str | Path, column_name: str) -> bool:
+    """Indica si la HDU 1 contiene una columna dada."""
+    ok, columns, _ = _get_hdu1_columns(path)
+    return bool(ok and columns and column_name.upper() in columns)
+
+
+#////////////////////////////////////////////
 
