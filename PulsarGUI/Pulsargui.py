@@ -62,6 +62,32 @@ def _get_hdu1_columns(path: str | Path) -> tuple[bool, set[str] | None, str]:
     except Exception as exc:
         return False, None, f"No se pudo leer el FITS: {exc}"
 
+def validate_photon_fits(path: str | Path) -> tuple[bool, str]:
+    """Comprueba que un FITS de eventos tenga columnas mínimas usadas por la GUI."""
+    ok, columns, message = _get_hdu1_columns(path)
+    if not ok or columns is None:
+        return False, message
+
+    missing = sorted(PHOTON_REQUIRED_COLUMNS - columns)
+    if missing:
+        return False, "Faltan columnas requeridas para eventos: " + ", ".join(missing)
+
+    return True, "FITS de fotones válido para el procesamiento inicial."
+
+def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
+    """Validación estructural básica del FITS de nave.
+
+    En esta versión el archivo de nave se conserva como entrada opcional y no se
+    utiliza todavía para baricentrado automático. Solo se comprueba que sea un
+    FITS tabular legible.
+    """
+    ok, columns, message = _get_hdu1_columns(path)
+    if not ok or columns is None:
+        return False, message
+    if len(columns) == 0:
+        return False, "El FITS de nave no contiene columnas en la HDU 1."
+    return True, "FITS de nave legible (uso opcional en Sprint 2)."
+
 
   
 
