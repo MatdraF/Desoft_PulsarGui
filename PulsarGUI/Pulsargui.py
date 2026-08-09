@@ -88,6 +88,51 @@ def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
         return False, "El FITS de nave no contiene columnas en la HDU 1."
     return True, "FITS de nave legible (uso opcional en Sprint 2)."
 
+def merge_event_fits(
+    paths: Iterable[str | Path],
+    output_path: str | Path | None = None,
+) -> Path:
+    """Une de forma preliminar las tablas de eventos (HDU 1) de varios FITS.
+
+    Se preservan la HDU primaria, la cabecera de la HDU de eventos y las
+    extensiones posteriores del primer archivo. Las GTI de archivos adicionales
+    NO se fusionan: esta es una limitación explícita del Sprint 2.
+    """
+    file_paths = [Path(p) for p in paths]
+    if not file_paths:
+        raise ValueError("Se requiere al menos un archivo FITS de eventos.")
+
+    for path in file_paths:
+        ok, message = validate_photon_fits(path)
+        if not ok:
+            raise ValueError(f"{path.name}: {message}")
+
+    tables = [Table.read(path, hdu=1) for path in file_paths]
+    combined = vstack(tables, join_type="exact", metadata_conflicts="silent")
+
+    if output_path is None:
+        temp_dir = Path(tempfile.mkdtemp(prefix="pulsar_sprint2_"))
+        output = temp_dir / "eventos_unificados.fits"
+    else:
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+    with fits.open(file_paths[0], memmap=False) as first_hdul:
+        primary_hdu = first_hdul[0].copy()
+        event_header = first_hdul[1].header.copy()
+        event_name = first_hdul[1].name
+        extra_hdus = [hdu.copy() for hdu in first_hdul[2:]]
+
+    event_hdu = fits.BinTableHDU(
+        data=combined.as_array(),
+        header=event_header,
+        name=event_name,
+    )
+    fits.HDUList([primary_hdu, event_hdu, *extra_hdus]).writeto(
+        output, overwrite=True
+    )
+
+    return output
 
   
 
