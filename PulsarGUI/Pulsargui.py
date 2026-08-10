@@ -153,3 +153,56 @@ def has_column(path: str | Path, column_name: str) -> bool:
 
 #////////////////////////////////////////////
 
+class PhaseWorker(QThread):
+    """Ejecuta fermiphase sin bloquear la interfaz.
+
+    El uso del hilo es inicial: la optimización completa del rendimiento queda
+    como trabajo de Sprint 3.
+    """
+
+    finished_with_status = pyqtSignal(bool, str)
+
+    def __init__(self, par_file: str, fits_file: str):
+        super().__init__()
+        self.par_file = par_file
+        self.fits_file = fits_file
+
+    def run(self):
+        command = build_fermiphase_command(self.fits_file, self.par_file)
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            self.finished_with_status.emit(
+                False,
+                "No se encontró el comando 'fermiphase'. Verifica que pint-pulsar "
+                "esté instalado y disponible en el entorno de Python.",
+            )
+            return
+        except Exception as exc:
+            self.finished_with_status.emit(False, f"Error al ejecutar fermiphase: {exc}")
+            return
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Sin detalle adicional").strip()
+            self.finished_with_status.emit(False, f"fermiphase terminó con error:\n{detail}")
+            return
+
+        if has_column(self.fits_file, "PULSE_PHASE"):
+            self.finished_with_status.emit(
+                True,
+                "Cálculo de fases completado. La columna PULSE_PHASE está disponible.",
+            )
+        else:
+            self.finished_with_status.emit(
+                True,
+                "fermiphase terminó correctamente, pero no se detectó PULSE_PHASE en la HDU 1. "
+                "Revise el archivo antes de continuar.",
+            )
+
+
