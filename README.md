@@ -338,17 +338,17 @@ The following improvements were introduced during Sprint 2:
 
 | Feature                          | Status        |
 | -------------------------------- | ------------- |
-| PAR file validation              | ✅ Implemented |
-| Photon FITS validation           | ✅ Implemented |
-| Spacecraft FITS validation       | ✅ Implemented |
-| Preliminary event merging        | ✅ Implemented |
-| RA–DEC histogram                 | ✅ Implemented |
-| fermiphase integration           | 🟡 Partial    |
-| PULSE_PHASE                      | 🟡 Partial    |
-| Automatic barycentric correction | ⏳ Pending     |
-| Complete phaseogram              | ⏳ Pending     |
-| Pulse profile                    | ⏳ Pending     |
-| Processing optimization          | ⏳ Pending     |
+| PAR file validation              |  Implemented |
+| Photon FITS validation           |  Implemented |
+| Spacecraft FITS validation       |  Implemented |
+| Preliminary event merging        |  Implemented |
+| RA–DEC histogram                 |  Implemented |
+| fermiphase integration           |  Partial    |
+| PULSE_PHASE                      |  Partial    |
+| Automatic barycentric correction |  Pending     |
+| Complete phaseogram              |  Pending     |
+| Pulse profile                    |  Pending     |
+| Processing optimization          |  Pending     |
 
 ---
 
