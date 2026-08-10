@@ -4,7 +4,7 @@ import pytest
 from astropy.io import fits
 from astropy.table import Table
 
-from PulsarGUI_Sprint2_PyQt6 import (
+from PulsarGUI.Pulsargui import (
     PHOTON_REQUIRED_COLUMNS,
     build_fermiphase_command,
     has_column,
