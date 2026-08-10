@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "desoft-pulsargui"
+version = "0.2.0"
+description = "Graphical interface for the initial processing and analysis of pulsar data"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+"astropy",
+"matplotlib",
+"PyQt6",
+"pint-pulsar",
+]
+
+[project.optional-dependencies]
+test = [
+"pytest",
+]
+
+[tool.setuptools]
+packages = ["PulsarGUI"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v"
