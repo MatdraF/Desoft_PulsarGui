@@ -73,7 +73,7 @@ Desoft_PulsarGui/
 
 ---
 
-# ⚙️ Installation
+#  Installation
 
 ## 1. Clone the repository
 
@@ -171,7 +171,7 @@ The project also includes an initial **GitHub Actions** workflow that automatica
 
 ---
 
-# 🔬 Processing Workflow
+#  Processing Workflow
 
 The main workflow implemented during Sprint 2 is:
 
@@ -334,7 +334,7 @@ The following improvements were introduced during Sprint 2:
 
 ---
 
-# 📋 Sprint 2 Status
+#  Sprint 2 Status
 
 | Feature                          | Status        |
 | -------------------------------- | ------------- |
