@@ -1,101 +1,59 @@
 # 🌌 Desoft PulsarGUI
 
-**Desoft PulsarGUI** is a Python-based graphical application for the initial loading, validation, processing, and visualization of astronomical data associated with pulsar studies.
-
-The project uses **PyQt6** for the graphical interface, **Astropy** for astronomical data processing, and **Matplotlib** for data visualization. It also includes an initial integration with **PINT/fermiphase** for pulsar event phase calculations.
-
-## Client
-
-The project was developed under the guidance of **Cristóbal Espinoza Romo**, an astrophysicist specializing in pulsars.
-
-He was assigned as the project's client and domain expert, providing guidance regarding the astronomical requirements and the pulsar data-processing workflow that the application is intended to support.
-
-The development of PulsarGUI follows the requirements, objectives, and feedback provided throughout the Software Development course.
-
-
-##  Sprint 2
-
-During Sprint 2, a partial data-processing workflow was implemented, including file validation, event processing, spatial visualization, and initial integration with `fermiphase`.
-
-### Implemented Features
-
-*  Loading and validation of `.par` parameter files.
-*  Loading and validation of photon FITS files.
-*  Optional spacecraft FITS file loading.
-*  Validation of HDU 1 columns.
-*  Verification of required columns:
-
-  * `TIME`
-  * `RA`
-  * `DEC`
-  * `ENERGY`
-*  Preliminary merging of events from multiple FITS files.
-*  Generation of a 2D `RA–DEC` histogram.
-*  Initial integration with `fermiphase`.
-*  Execution of `fermiphase` using `QThread` to prevent the GUI from freezing.
-*  Verification of the `PULSE_PHASE` column.
-*  Initial unit tests using Pytest.
-*  Initial GitHub Actions configuration.
-
----
-## Problem
-
-PulsarGUI addresses the need for a graphical interface that simplifies
-the initial validation, processing, and visualization of astronomical
-data used in pulsar studies.
-
-The application reduces the need for users to interact directly with
-command-line tools during the initial stages of the data-processing
-workflow.
----
-
-##  Technologies
-
-* **Python 3.10+**
-* **PyQt6** — graphical user interface.
-* **Astropy** — FITS file reading and astronomical data processing.
-* **Matplotlib** — data visualization.
-* **Pytest** — unit testing.
-* **PINT / fermiphase** — pulsar phase processing.
-* **Git / GitHub** — version control and collaboration.
-* **GitHub Actions** — automated testing.
+A Python-based graphical application for the initial loading, validation, processing, and visualization of astronomical data associated with pulsar studies.
 
 ---
 
-##  Project Structure
+##  Description
 
-```text
-Desoft_PulsarGui/
-│
-├── .github/
-│   └── workflows/
-│       └── pruebas.yml
-│
-├── src/
-│   └── PulsarGUI/
-│       ├── __init__.py
-│       └── Pulsargui.py
-│
-├── tests/
-│   ├── test_basico.py
-│   └── test_pytest.py
-│
-│
-├── DataTest/
-│   ├── L2607262307084E8FDC4046_PH01.fits
-│   └── L2607262307084E8FDC4046_SC00.fits
-│   └── PSR_J1227.par
-├── .gitignore
-├── .gitattributes
-├── README.md
-└── pyproject.toml
-```
+**Desoft PulsarGUI** is a desktop application developed in Python that provides a graphical interface for the initial stages of processing astronomical data used in pulsar studies.
+
+The application uses:
+
+* **PyQt6** for the graphical user interface.
+* **Astropy** for astronomical data processing and FITS file handling.
+* **Matplotlib** for data visualization.
+* **Pytest** for automated testing.
+* **PINT / fermiphase** for the initial calculation of pulsar event phases.
+* **Git and GitHub** for version control and collaboration.
+* **GitHub Actions** for automated testing.
+
+The current version corresponds to the partial implementation of **Sprint 2**.
 
 ---
 
-#  Installation
+#  Problem
 
-## 1. Clone the repository
+The initial analysis of pulsar data requires working with different astronomical files, such as `.par` parameter files and FITS files containing photon events.
+
+These tasks may require command-line tools and specific knowledge about the structure of astronomical data files.
+
+**PulsarGUI aims to simplify this process through a graphical interface**, allowing users to:
+
+* Select astronomical data files.
+* Validate `.par` parameter files.
+* Validate FITS files.
+* Check the required event columns.
+* Merge events from multiple FITS files.
+* Visualize the spatial distribution of events.
+* Run the initial `fermiphase` processing.
+* Verify the generation of the `PULSE_PHASE` column.
+
+The application therefore provides a graphical layer over the initial stages of the pulsar data-processing workflow.
+
+---
+
+# Installation
+
+## Requirements
+
+The following software is required:
+
+* Python **3.10 or higher**
+* Git
+* Pip
+
+## Clone the repository
 
 ```bash
 git clone https://github.com/MatdraF/Desoft_PulsarGui.git
@@ -107,11 +65,7 @@ Navigate to the project directory:
 cd Desoft_PulsarGui
 ```
 
----
-
-## 2. Create a virtual environment
-
-It is recommended to use a Python virtual environment to keep the project dependencies isolated.
+## Create a virtual environment
 
 On Windows:
 
@@ -119,7 +73,7 @@ On Windows:
 python -m venv .venv
 ```
 
-Activate the environment:
+Activate the virtual environment:
 
 ```powershell
 .venv\Scripts\activate
@@ -127,13 +81,11 @@ Activate the environment:
 
 If the environment was activated successfully, `(.venv)` will appear at the beginning of the terminal.
 
----
-
-## 3. Install the project and dependencies
+## Install the project
 
 The project uses `pyproject.toml` to manage its dependencies.
 
-To install the main dependencies:
+To install the project and its main dependencies:
 
 ```powershell
 pip install -e .
@@ -147,7 +99,7 @@ pip install -e ".[test]"
 
 ---
 
-#  Running the Application
+# Running the Application
 
 With the virtual environment activated, run:
 
@@ -155,27 +107,25 @@ With the virtual environment activated, run:
 python src/PulsarGUI/Pulsargui.py
 ```
 
-This will launch the:
+This will launch the graphical application:
 
 ```text
 PulsarGUI - Sprint 2
 ```
 
-graphical interface.
-
-The application allows users to load the required files and execute the processing features implemented during Sprint 2.
+The application allows users to load the required files and execute the processing and visualization features implemented during Sprint 2.
 
 ---
 
-#  Testing
+# Running Tests
 
-Unit tests are located in:
+Automated tests are located in:
 
 ```text
 tests/
 ```
 
-To run the tests:
+To run all tests:
 
 ```powershell
 pytest
@@ -191,9 +141,122 @@ The project also includes an initial **GitHub Actions** workflow that automatica
 
 ---
 
-#  Processing Workflow
+# Examples of Use
 
-The main workflow implemented during Sprint 2 is:
+## File Validation
+
+The user can load a `.par` parameter file and one or more photon FITS files.
+
+Photon event FITS files must contain the following columns in **HDU 1**:
+
+```text
+TIME
+RA
+DEC
+ENERGY
+```
+
+The application verifies that these required columns are present before continuing with the processing workflow.
+
+---
+
+## FITS Event Merging
+
+The application can preliminarily merge event tables from multiple photon FITS files.
+
+The current implementation:
+
+* Preserves the Primary HDU from the first file.
+* Preserves the event table header.
+* Preserves additional extensions from the first FITS file.
+* Does not merge GTI extensions from additional files.
+
+---
+
+## RA–DEC Visualization
+
+The application can generate a two-dimensional spatial histogram using:
+
+```text
+RA
+DEC
+```
+
+This visualization provides a representation of the spatial distribution of detected events.
+
+---
+
+## Pulsar Phase Calculation
+
+When a `.par` file and a processed FITS file are available, the application can run `fermiphase` to calculate the event phases.
+
+The process is executed using a **QThread**, preventing the graphical interface from freezing while the calculation is running.
+
+The application then verifies the presence of the:
+
+```text
+PULSE_PHASE
+```
+
+column.
+
+---
+
+# Team Members
+
+This project was developed collaboratively by:
+
+* **Matias Fernandez**
+* **Ivan Paredes**
+* **Adolfo Ceballos**
+* **Jhoon Ladera**
+
+The team uses Git and GitHub for version control, branch management, commits, Pull Requests, and continuous integration through GitHub Actions.
+
+---
+
+# Client
+
+The project was developed under the guidance of:
+
+**Cristóbal Espinoza Romo**
+
+Astrophysicist specializing in **pulsars**, who acts as the project's **client and domain expert**.
+
+The client provides guidance regarding the astronomical requirements and the pulsar data-processing workflow that the application is intended to support.
+
+The development of PulsarGUI follows the requirements, objectives, and feedback provided throughout the Software Development course.
+
+---
+
+# Current Development Status
+
+**PulsarGUI is currently in Sprint 2**, with a partial implementation of the initial pulsar data-processing workflow.
+
+| Feature                                        | Status                 |
+| ---------------------------------------------- | ---------------------- |
+| `.par` file validation                         | Implemented            |
+| Photon FITS validation                         | Implemented            |
+| Spacecraft FITS validation                     | Implemented            |
+| HDU 1 column validation                        | Implemented            |
+| `TIME`, `RA`, `DEC`, and `ENERGY` verification | Implemented            |
+| Preliminary FITS event merging                 | Implemented            |
+| RA–DEC 2D histogram                            | Implemented            |
+| `fermiphase` integration                       | Partial                |
+| `PULSE_PHASE` verification                     | Partial                |
+| Pytest unit tests                              | Implemented            |
+| GitHub Actions                                 | Initial implementation |
+| Automatic barycentric correction               | Pending                |
+| Complete GTI merging                           | Pending                |
+| Complete phaseogram                            | Pending                |
+| Pulse profile                                  | Pending                |
+| Processing optimization                        | Pending                |
+
+---
+
+# Processing Workflow
+
+The current Sprint 2 workflow can be summarized as follows:
 
 ```text
              ┌──────────────┐
@@ -209,10 +272,10 @@ The main workflow implemented during Sprint 2 is:
 └───────────────────┬──────────────────┘
                     │
                     ▼
-               FITS Validation
+              FITS Validation
                     │
                     ▼
-             Event Merging
+              Event Merging
                     │
                     ▼
           Processing FITS File
@@ -230,75 +293,56 @@ The spacecraft FITS file is optional in the current version.
 
 ---
 
-#  Main Features
-
-## File Validation
-
-The application performs basic checks to ensure that selected files are valid and suitable for processing.
-
-Photon FITS files must contain the following columns:
+# Project Structure
 
 ```text
-TIME
-RA
-DEC
-ENERGY
+Desoft_PulsarGui/
+│
+├── .github/
+│   └── workflows/
+│       └── pruebas.yml
+│
+├── src/
+│   └── PulsarGUI/
+│       ├── __init__.py
+│       └── Pulsargui.py
+│
+├── tests/
+│   ├── test_basico.py
+│   └── test_pytest.py
+│
+├── DataTest/
+│   ├── L2607262307084E8FDC4046_PH01.fits
+│   ├── L2607262307084E8FDC4046_SC00.fits
+│   └── PSR_J1227.par
+│
+├── .gitignore
+├── .gitattributes
+├── README.md
+└── pyproject.toml
 ```
-
-The application also checks that the required data are located in HDU 1.
-
-## Event Merging
-
-The application can preliminarily merge event tables from multiple FITS files.
-
-The current implementation:
-
-* Preserves the primary HDU from the first file.
-* Preserves the event table header.
-* Preserves additional extensions from the first FITS file.
-* Does not merge GTI extensions from additional files.
-
-## Data Visualization
-
-A 2D spatial histogram is generated using:
-
-```text
-RA
-DEC
-```
-
-This provides a visual representation of the spatial distribution of the detected events.
-
-## Phase Calculation
-
-The application builds and executes the `fermiphase` command using the selected FITS and `.par` files.
-
-The process runs inside a `QThread` so that the graphical interface remains responsive while the calculation is running.
 
 ---
 
-#  Sprint 2 Limitations
+# Technologies
 
-The current implementation is partial.
-
-* GTI extensions from additional FITS files are not merged.
-* The spacecraft FITS file is not yet used for automatic barycentric correction.
-* The `fermiphase` integration is still in an initial stage.
-* A complete phaseogram is not yet implemented.
-* The pulse profile is not yet implemented.
-* Full processing optimization is planned for future Sprints.
+| Technology        | Purpose                                      |
+| ----------------- | -------------------------------------------- |
+| Python 3.10+      | Main programming language                    |
+| PyQt6             | Graphical user interface                     |
+| Astropy           | Astronomical data processing                 |
+| Matplotlib        | Data visualization                           |
+| Pytest            | Unit testing                                 |
+| PINT / fermiphase | Pulsar phase calculation                     |
+| Git               | Version control                              |
+| GitHub            | Collaboration and repository hosting         |
+| GitHub Actions    | Automated testing and continuous integration |
 
 ---
 
-#  Git and Collaboration
+# Git and Collaboration
 
-The project uses Git and GitHub for version control and collaborative development.
-
-The main branch is:
-
-```text
-main
-```
+The project uses `main` as its main branch.
 
 New features should preferably be developed in separate branches:
 
@@ -316,89 +360,40 @@ git push
 
 Completed features can be integrated into `main` through a **Pull Request**.
 
-### Development Workflow
+Example workflow:
 
 ```text
 main
  │
- ├──── feature/file-validation
+ ├── feature/file-validation
  │
- ├──── feature/event-processing
+ ├── feature/event-processing
  │
- └──── feature/gui
-             │
-             ▼
-       Pull Request
-             │
-             ▼
-            main
+ └── feature/gui
+          │
+          ▼
+     Pull Request
+          │
+          ▼
+         main
 ```
 
 ---
 
-# Changes from Sprint 1
+# Current Limitations
 
-The following improvements were introduced during Sprint 2:
+The current Sprint 2 implementation has several limitations:
 
-* `.par` file validation.
-* FITS file validation.
-* Event column validation.
-* Preliminary FITS event merging.
-* `RA–DEC` spatial histogram.
-* Initial PINT/fermiphase integration.
-* Background processing using `QThread`.
-* `PULSE_PHASE` verification.
-* Additional unit tests.
-* Initial GitHub Actions configuration.
-* Expanded graphical interface.
+* GTI extensions from additional FITS files are not merged.
+* The spacecraft FITS file is not yet used for automatic barycentric correction.
+* The `fermiphase` integration is still in an initial stage.
+* A complete phaseogram has not yet been implemented.
+* The pulse profile has not yet been implemented.
+* Processing optimization is planned for future Sprints.
 
 ---
 
-#  Sprint 2 Status
+# License
 
-| Feature                          | Status        |
-| -------------------------------- | ------------- |
-| PAR file validation              |  Implemented |
-| Photon FITS validation           |  Implemented |
-| Spacecraft FITS validation       |  Implemented |
-| Preliminary event merging        |  Implemented |
-| RA–DEC histogram                 |  Implemented |
-| fermiphase integration           |  Partial    |
-| PULSE_PHASE                      |  Partial    |
-| Automatic barycentric correction |  Pending     |
-| Complete phaseogram              |  Pending     |
-| Pulse profile                    |  Pending     |
-| Processing optimization          |  Pending     |
+This project was developed for academic purposes as part of the **Software Development course**.
 
----
-
-#  Collaboration
-
-The project uses:
-
-* Git
-* GitHub
-* Branches
-* Commits
-* Pull Requests
-* GitHub Actions
-
-This workflow provides version control, traceability of changes, and organized collaboration between team members.
-
----
-## Team
-
-This project was developed collaboratively by:
-
-* **Matias Fernandez**
-* **Ivan Paredes**
-* **Adolfo Ceballos**
-* **Jhoon Ladera**
-
-The team uses Git and GitHub for version control, collaborative development, branch management, commits, Pull Requests, and continuous integration through GitHub Actions.
-
----
-
-# 📄 License
-
-This project was developed for academic purposes as part of the Software Development course.
