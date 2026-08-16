@@ -80,8 +80,6 @@ Desoft_PulsarGui/
 │   ├── test_basico.py
 │   └── test_pytest.py
 │
-├── docs/
-│   └── ...
 │
 ├── DataTest/
 │   ├── L2607262307084E8FDC4046_PH01.fits
