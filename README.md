@@ -4,7 +4,14 @@
 
 The project uses **PyQt6** for the graphical interface, **Astropy** for astronomical data processing, and **Matplotlib** for data visualization. It also includes an initial integration with **PINT/fermiphase** for pulsar event phase calculations.
 
----
+## Client
+
+The project was developed under the guidance of **Cristóbal Espinoza Romo**, an astrophysicist specializing in pulsars.
+
+He was assigned as the project's client and domain expert, providing guidance regarding the astronomical requirements and the pulsar data-processing workflow that the application is intended to support.
+
+The development of PulsarGUI follows the requirements, objectives, and feedback provided throughout the Software Development course.
+
 
 ##  Sprint 2
 
@@ -31,6 +38,16 @@ During Sprint 2, a partial data-processing workflow was implemented, including f
 *  Initial GitHub Actions configuration.
 
 ---
+## Problem
+
+PulsarGUI addresses the need for a graphical interface that simplifies
+the initial validation, processing, and visualization of astronomical
+data used in pulsar studies.
+
+The application reduces the need for users to interact directly with
+command-line tools during the initial stages of the data-processing
+workflow.
+---
 
 ##  Technologies
 
@@ -52,23 +69,28 @@ Desoft_PulsarGui/
 │
 ├── .github/
 │   └── workflows/
-│       └── ...
+│       └── pruebas.yml
 │
-├── DataTest/
-│   └── ...
-│
-├── PulsarGUI/
-│   ├── Pulsargui.py
-│   ├── __init__.py
-│   └── ...
+├── src/
+│   └── PulsarGUI/
+│       ├── __init__.py
+│       └── Pulsargui.py
 │
 ├── tests/
+│   ├── test_basico.py
+│   └── test_pytest.py
+│
+├── docs/
 │   └── ...
 │
+├── DataTest/
+│   ├── L2607262307084E8FDC4046_PH01.fits
+│   └── L2607262307084E8FDC4046_SC00.fits
+│   └── PSR_J1227.par
+├── .gitignore
 ├── .gitattributes
 ├── README.md
-├── pyproject.toml
-└── ...
+└── pyproject.toml
 ```
 
 ---
@@ -132,7 +154,7 @@ pip install -e ".[test]"
 With the virtual environment activated, run:
 
 ```powershell
-python PulsarGUI/Pulsargui.py
+python src/PulsarGUI/Pulsargui.py
 ```
 
 This will launch the:
