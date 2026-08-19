@@ -280,15 +280,28 @@ def find_fermiphase_executable() -> str:
     )
 
 
-def build_fermiphase_command(fits_path: str | Path, par_path: str | Path) -> list[str]:
-    """Construye el comando PINT/fermiphase que agrega PULSE_PHASE."""
-    return [
+def build_fermiphase_command(
+    fits_path: str | Path,
+    par_path: str | Path,
+    ft2_path: str | Path | None = None,
+) -> list[str]:
+    """Construye el comando PINT/fermiphase que agrega PULSE_PHASE.
+
+    Si se entrega un FT2, se pasa mediante --ft2 para que PINT pueda registrar
+    correctamente el observatorio satelital Fermi al procesar eventos FT1 crudos.
+    """
+    command = [
         find_fermiphase_executable(),
-        "--addphase",
         str(fits_path),
         str(par_path),
         "CALC",
     ]
+
+    if ft2_path is not None:
+        command.extend(["--ft2", str(ft2_path)])
+
+    command.append("--addphase")
+    return command
 
 
 def _read_par_parameter(path: str | Path, key: str) -> str | None:
@@ -545,8 +558,9 @@ class PulsarGUISprint3(QWidget):
 
         note = QLabel(
             "Concurrencia Sprint 3: la GUI no espera indefinidamente al worker. Los procesos "
-            "externos usan timeout, cancelación y señales. El baricentrado requiere que "
-            "FermiTools/gtbary esté instalado en el entorno."
+            "externos usan timeout, cancelación y señales. Para eventos Fermi crudos, "
+            "fermiphase utiliza el FT2 cargado mediante --ft2. gtbary queda como "
+            "preprocesamiento opcional si FermiTools está instalado."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -754,12 +768,23 @@ class PulsarGUISprint3(QWidget):
             return
 
         par = self.files["par"]
+        spacecraft = self.files["spacecraft"]
+
         if not isinstance(par, str):
             return
 
+        # FT2 es opcional para archivos ya geocentrados/baricentrados, pero para
+        # eventos Fermi FT1 crudos PINT lo necesita. Si el usuario lo cargó,
+        # siempre se lo entregamos a fermiphase mediante --ft2.
+        ft2_path = spacecraft if isinstance(spacecraft, str) else None
+
         try:
             output = prepare_phase_output(self.processing_fits)
-            command = build_fermiphase_command(output, par)
+            command = build_fermiphase_command(
+                output,
+                par,
+                ft2_path=ft2_path,
+            )
         except Exception as exc:
             self.show_message(
                 "Error preparando cálculo de fase",
