@@ -284,11 +284,18 @@ def build_fermiphase_command(
     fits_path: str | Path,
     par_path: str | Path,
     ft2_path: str | Path | None = None,
+    output_path: str | Path | None = None,
 ) -> list[str]:
     """Construye el comando PINT/fermiphase que agrega PULSE_PHASE.
 
-    Si se entrega un FT2, se pasa mediante --ft2 para que PINT pueda registrar
-    correctamente el observatorio satelital Fermi al procesar eventos FT1 crudos.
+    En Windows se evita modificar el FITS de entrada *in-place*. Si se entrega
+    ``output_path`` se usa ``--outfile`` para que PINT abra el FITS de entrada en
+    solo lectura y escriba el resultado en un archivo nuevo. Esto evita el
+    PermissionError/WinError 32 que puede aparecer cuando Astropy necesita
+    redimensionar una tabla FITS abierta en modo update para agregar PULSE_PHASE.
+
+    Si se entrega un FT2, se pasa mediante --ft2 para registrar correctamente
+    el observatorio satelital Fermi al procesar eventos FT1 crudos.
     """
     command = [
         find_fermiphase_executable(),
@@ -300,7 +307,11 @@ def build_fermiphase_command(
     if ft2_path is not None:
         command.extend(["--ft2", str(ft2_path)])
 
-    command.append("--addphase")
+    if output_path is not None:
+        command.extend(["--outfile", str(output_path)])
+    else:
+        command.append("--addphase")
+
     return command
 
 
@@ -779,11 +790,20 @@ class PulsarGUISprint3(QWidget):
         ft2_path = spacecraft if isinstance(spacecraft, str) else None
 
         try:
-            output = prepare_phase_output(self.processing_fits)
+            # No copiamos el FITS para que fermiphase lo modifique en modo update.
+            # En Windows esa operación puede fallar con WinError 32 al agregar una
+            # nueva columna porque Astropy necesita redimensionar el archivo.
+            # Usamos un directorio temporal nuevo y --outfile, de modo que PINT
+            # lea el FITS consolidado y escriba PULSE_PHASE en un archivo distinto.
+            source = Path(self.processing_fits)
+            phase_dir = Path(tempfile.mkdtemp(prefix="pulsargui_phase_"))
+            output = phase_dir / f"{source.stem}_con_fase{source.suffix}"
+
             command = build_fermiphase_command(
-                output,
+                source,
                 par,
                 ft2_path=ft2_path,
+                output_path=output,
             )
         except Exception as exc:
             self.show_message(
