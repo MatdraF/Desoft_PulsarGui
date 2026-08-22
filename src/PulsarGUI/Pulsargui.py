@@ -56,7 +56,7 @@ def validate_par_file(path: str | Path) -> tuple[bool, str]:
     if file_path.stat().st_size == 0:
         return False, "El archivo PAR está vacío."
 
-    return True, "Archivo PAR válido para la validación inicial del Sprint 2."
+    return True, "Archivo PAR válido."
 
 def _get_hdu1_columns(path: str | Path) -> tuple[bool, set[str] | None, str]:
     file_path = Path(path)
@@ -69,10 +69,10 @@ def _get_hdu1_columns(path: str | Path) -> tuple[bool, set[str] | None, str]:
     try:
         with fits.open(file_path, memmap=False) as hdul:
             if len(hdul) < 2:
-                return False, None, "El FITS no contiene una extensión HDU 1 con datos tabulares."
+                return False, None, "El FITS no contiene una HDU 1 tabular."
             columns = getattr(hdul[1], "columns", None)
             if columns is None or columns.names is None:
-                return False, None, "La HDU 1 del FITS no contiene columnas tabulares."
+                return False, None, "La HDU 1 no contiene columnas tabulares."
             names = {str(name).upper() for name in columns.names}
             return True, names, "FITS legible."
     except Exception as exc:
@@ -86,23 +86,46 @@ def validate_photon_fits(path: str | Path) -> tuple[bool, str]:
 
     missing = sorted(PHOTON_REQUIRED_COLUMNS - columns)
     if missing:
-        return False, "Faltan columnas requeridas para eventos: " + ", ".join(missing)
+        return False, "Faltan columnas de eventos: " + ", ".join(missing)
 
-    return True, "FITS de fotones válido para el procesamiento inicial."
+    try:
+        with fits.open(path, memmap=False) as hdul:
+            gti_index = _find_hdu_index(hdul, "GTI")
+            if gti_index is None:
+                return False, "El FITS no contiene una extensión GTI."
+
+            gti_columns = getattr(hdul[gti_index], "columns", None)
+            if gti_columns is None or gti_columns.names is None:
+                return False, "La extensión GTI no contiene una tabla válida."
+
+            gti_names = {str(name).upper() for name in gti_columns.names}
+            missing_gti = sorted(GTI_REQUIRED_COLUMNS - gti_names)
+            if missing_gti:
+                return False, "La GTI no contiene: " + ", ".join(missing_gti)
+
+    except Exception as exc:
+        return False, f"No se pudo validar la GTI: {exc}"
+
+    return True, "FITS de eventos y GTI válido."
+
 
 def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
-    """Validación estructural básica del FITS de nave.
-
-    En esta versión el archivo de nave se conserva como entrada opcional y no se
-    utiliza todavía para baricentrado automático. Solo se comprueba que sea un
-    FITS tabular legible.
-    """
+    """Valida la estructura mínima de un FT2 de Fermi."""
     ok, columns, message = _get_hdu1_columns(path)
     if not ok or columns is None:
         return False, message
-    if len(columns) == 0:
-        return False, "El FITS de nave no contiene columnas en la HDU 1."
-    return True, "FITS de nave legible (uso opcional en Sprint 2)."
+    
+    missing = sorted(FT2_REQUIRED_COLUMNS - columns)
+    if missing:
+        return False, "El FITS de nave no parece un FT2 de Fermi. Faltan: " + ", ".join(missing)
+
+    warning = ""
+    if "SC_VELOCITY" not in columns:
+        warning = " SC_VELOCITY no está presente; PINT puede depender de la versión/formato del FT2."
+
+    return True, "FT2 de Fermi válido estructuralmente." + warning
+
+
 # ---------------------------------------------------------------------------
 # Tiempo y compatibilidad
 # ---------------------------------------------------------------------------
@@ -115,44 +138,100 @@ def merge_event_fits(
     paths: Iterable[str | Path],
     output_path: str | Path | None = None,
 ) -> Path:
-    """Une de forma preliminar las tablas de eventos (HDU 1) de varios FITS.
-
-    Se preservan la HDU primaria, la cabecera de la HDU de eventos y las
-    extensiones posteriores del primer archivo. Las GTI de archivos adicionales
-    NO se fusionan: esta es una limitación explícita del Sprint 2.
-    """
+    """Fusiona EVENTS y GTI, ordena eventos y normaliza GTI solapadas."""
     file_paths = [Path(p) for p in paths]
     if not file_paths:
-        raise ValueError("Se requiere al menos un archivo FITS de eventos.")
+        raise ValueError("Se requiere al menos un FITS de eventos.")
 
     for path in file_paths:
         ok, message = validate_photon_fits(path)
         if not ok:
             raise ValueError(f"{path.name}: {message}")
 
-    tables = [Table.read(path, hdu=1) for path in file_paths]
-    combined = vstack(tables, join_type="exact", metadata_conflicts="silent")
+    _assert_time_metadata_compatible(file_paths)
+
+    event_tables: list[Table] = []
+    gti_tables: list[Table] = []
+
+    event_header: fits.Header | None = None
+    gti_header: fits.Header | None = None
+    event_name = "EVENTS"
+    gti_name = "GTI"
+
+    for index, path in enumerate(file_paths):
+        (
+            events,
+            gti,
+            current_event_header,
+            current_gti_header,
+            current_event_name,
+            current_gti_name,
+        ) = _read_events_and_gti(path)
+
+        event_tables.append(events)
+        gti_tables.append(gti)
+
+        if index == 0:
+            event_header = current_event_header
+            gti_header = current_gti_header
+            event_name = current_event_name
+            gti_name = current_gti_name
+
+    combined_events = vstack(event_tables, join_type="exact", metadata_conflicts="silent")
+    combined_gti_raw = vstack(gti_tables, join_type="exact", metadata_conflicts="silent")
+
+    combined_events.sort("TIME")
+    combined_gti = merge_overlapping_gti(combined_gti_raw)
+
+    tstart = float(np.min(np.asarray(combined_gti["START"], dtype=float)))
+    tstop = float(np.max(np.asarray(combined_gti["STOP"], dtype=float)))
 
     if output_path is None:
-        temp_dir = Path(tempfile.mkdtemp(prefix="pulsar_sprint2_"))
-        output = temp_dir / "eventos_unificados.fits"
+        temp_dir = Path(tempfile.mkdtemp(prefix="pulsargui_sprint3_"))
+        output = temp_dir / "eventos_y_gti_unificados.fits"
     else:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
     with fits.open(file_paths[0], memmap=False) as first_hdul:
         primary_hdu = first_hdul[0].copy()
-        event_header = first_hdul[1].header.copy()
-        event_name = first_hdul[1].name
-        extra_hdus = [hdu.copy() for hdu in first_hdul[2:]]
+
+        extra_hdus = []
+        for index, hdu in enumerate(first_hdul[1:], start=1):
+            name = str(getattr(hdu, "name", "")).upper()
+            if index == 1 or name == "GTI":
+                continue
+            extra_hdus.append(hdu.copy())
+
+    assert event_header is not None
+    assert gti_header is not None
+
+    # Actualizar únicamente metadatos cuya interpretación es inequívoca.
+    event_header["TSTART"] = tstart
+    event_header["TSTOP"] = tstop
+    gti_header["TSTART"] = tstart
+    gti_header["TSTOP"] = tstop
+
+    if "TSTART" in primary_hdu.header:
+        primary_hdu.header["TSTART"] = tstart
+    if "TSTOP" in primary_hdu.header:
+        primary_hdu.header["TSTOP"] = tstop
 
     event_hdu = fits.BinTableHDU(
-        data=combined.as_array(),
+        data=combined_events.as_array(),
         header=event_header,
         name=event_name,
     )
-    fits.HDUList([primary_hdu, event_hdu, *extra_hdus]).writeto(
-        output, overwrite=True
+    gti_hdu = fits.BinTableHDU(
+        data=combined_gti.as_array(),
+        header=gti_header,
+        name=gti_name,
+    )
+
+    fits.HDUList([primary_hdu, event_hdu, gti_hdu, *extra_hdus]).writeto(
+        output,
+        overwrite=True,
+        checksum=True,
     )
 
     return output
@@ -160,16 +239,28 @@ def merge_event_fits(
 # PINT / fermiphase
 # ---------------------------------------------------------------------------
 
-def build_fermiphase_command(fits_path: str | Path, par_path: str | Path) -> list[str]:
-    """Construye el comando utilizado para calcular/agregar PULSE_PHASE con PINT."""
-    return [
-        "fermiphase",
-        "--addphase",
+def build_fermiphase_command(
+    fits_path: str | Path,
+    par_path: str | Path,
+    ft2_path: str | Path | None = None,
+    output_path: str | Path | None = None,
+) -> list[str]:
+    command = [
+        find_fermiphase_executable(),
         str(fits_path),
         str(par_path),
         "CALC",
     ]
 
+    if ft2_path is not None:
+        command.extend(["--ft2", str(ft2_path)])
+
+    if output_path is not None:
+        command.extend(["--outfile", str(output_path)])
+    else:
+        command.append("--addphase")
+
+    return command
 
 def has_column(path: str | Path, column_name: str) -> bool:
     """Indica si la HDU 1 contiene una columna dada."""
@@ -177,60 +268,90 @@ def has_column(path: str | Path, column_name: str) -> bool:
     return bool(ok and columns and column_name.upper() in columns)
 
 
-#////////////////////////////////////////////
+class ExternalCommandWorker(QThread):
+    completed = pyqtSignal(str, bool, str)
 
-class PhaseWorker(QThread):
-    """Ejecuta fermiphase sin bloquear la interfaz.
-
-    El uso del hilo es inicial: la optimización completa del rendimiento queda
-    como trabajo de Sprint 3.
-    """
-
-    finished_with_status = pyqtSignal(bool, str)
-
-    def __init__(self, par_file: str, fits_file: str):
+    def __init__(
+        self,
+        operation: str,
+        command: list[str],
+        timeout_s: int = EXTERNAL_PROCESS_TIMEOUT_S,
+    ):
         super().__init__()
-        self.par_file = par_file
-        self.fits_file = fits_file
+        self.operation = operation
+        self.command = command
+        self.timeout_s = timeout_s
+        self._process: subprocess.Popen[str] | None = None
+        self._process_lock = threading.Lock()
 
-    def run(self):
-        command = build_fermiphase_command(self.fits_file, self.par_file)
+    def cancel(self) -> None:
+        self.requestInterruption()
+
+        with self._process_lock:
+            process = self._process
+
+        if process is not None and process.poll() is None:
+            try:
+                process.kill()
+            except OSError:
+                pass
+
+    def run(self) -> None:
+        if self.isInterruptionRequested():
+            self.completed.emit(self.operation, False, "Operación cancelada antes de comenzar.")
+            return
 
         try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
+            process = subprocess.Popen(
+                self.command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                check=False,
             )
+
+            with self._process_lock:
+                self._process = process
+
+            try:
+                stdout, stderr = process.communicate(timeout=self.timeout_s)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+                self.completed.emit(
+                    self.operation,
+                    False,
+                    f"La operación superó {self.timeout_s} s y fue detenida.",
+                )
+                return
+
+            if self.isInterruptionRequested():
+                self.completed.emit(self.operation, False, "Operación cancelada.")
+                return
+
+            if process.returncode != 0:
+                detail = (stderr or stdout or "Sin detalle adicional").strip()
+                self.completed.emit(
+                    self.operation,
+                    False,
+                    f"El proceso terminó con código {process.returncode}:\n{detail}",
+                )
+                return
+
+            detail = (stdout or stderr or "Proceso completado correctamente.").strip()
+            self.completed.emit(self.operation, True, detail)
+
         except FileNotFoundError:
-            self.finished_with_status.emit(
+            executable = self.command[0] if self.command else "comando externo"
+            self.completed.emit(
+                self.operation,
                 False,
-                "No se encontró el comando 'fermiphase'. Verifica que pint-pulsar "
-                "esté instalado y disponible en el entorno de Python.",
+                f"No se encontró '{executable}' en el entorno actual.",
             )
-            return
         except Exception as exc:
-            self.finished_with_status.emit(False, f"Error al ejecutar fermiphase: {exc}")
-            return
-
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "Sin detalle adicional").strip()
-            self.finished_with_status.emit(False, f"fermiphase terminó con error:\n{detail}")
-            return
-
-        if has_column(self.fits_file, "PULSE_PHASE"):
-            self.finished_with_status.emit(
-                True,
-                "Cálculo de fases completado. La columna PULSE_PHASE está disponible.",
-            )
-        else:
-            self.finished_with_status.emit(
-                True,
-                "fermiphase terminó correctamente, pero no se detectó PULSE_PHASE en la HDU 1. "
-                "Revise el archivo antes de continuar.",
-            )
-
+            self.completed.emit(self.operation, False, f"Error inesperado: {exc}")
+        finally:
+            with self._process_lock:
+                self._process = None
 # ---------------------------------------------------------------------------
 # GUI principal: procesamiento/visualización solamente
 # ---------------------------------------------------------------------------
