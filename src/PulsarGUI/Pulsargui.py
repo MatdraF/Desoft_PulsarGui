@@ -1,23 +1,29 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
+import threading
 from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
+import numpy as np
+from astropy import units as u
 from astropy.io import fits
 from astropy.table import Table, vstack
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QCloseEvent, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -25,6 +31,16 @@ from PyQt6.QtWidgets import (
 )
 
 PHOTON_REQUIRED_COLUMNS = {"TIME", "RA", "DEC", "ENERGY"}
+GTI_REQUIRED_COLUMNS = {"START", "STOP"}
+FT2_REQUIRED_COLUMNS = {"START", "STOP", "SC_POSITION"}
+TIME_HEADER_KEYS = ("TIMESYS", "TIMEREF", "TIMEUNIT")
+EXTERNAL_PROCESS_TIMEOUT_S = 15 * 60
+
+# ---------------------------------------------------------------------------
+# Validación de archivos
+# ---------------------------------------------------------------------------
+
+
 def validate_par_file(path: str | Path) -> tuple[bool, str]:
     """Validación básica de un archivo de parámetros .par.
 
@@ -87,6 +103,13 @@ def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
     if len(columns) == 0:
         return False, "El FITS de nave no contiene columnas en la HDU 1."
     return True, "FITS de nave legible (uso opcional en Sprint 2)."
+# ---------------------------------------------------------------------------
+# Tiempo y compatibilidad
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Unificación EVENTS + GTI
+# ---------------------------------------------------------------------------
 
 def merge_event_fits(
     paths: Iterable[str | Path],
@@ -133,6 +156,9 @@ def merge_event_fits(
     )
 
     return output
+# ---------------------------------------------------------------------------
+# PINT / fermiphase
+# ---------------------------------------------------------------------------
 
 def build_fermiphase_command(fits_path: str | Path, par_path: str | Path) -> list[str]:
     """Construye el comando utilizado para calcular/agregar PULSE_PHASE con PINT."""
@@ -205,6 +231,10 @@ class PhaseWorker(QThread):
                 "Revise el archivo antes de continuar.",
             )
 
+# ---------------------------------------------------------------------------
+# GUI principal: procesamiento/visualización solamente
+# ---------------------------------------------------------------------------
+
 class PulsarGUISprint2(QWidget):
     def __init__(self):
         super().__init__()
@@ -251,7 +281,9 @@ class PulsarGUISprint2(QWidget):
         )
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
-
+        # ---------------------------------------------------------------
+        # 1. Archivos de entrada
+        # ---------------------------------------------------------------
         file_buttons = QHBoxLayout()
 
         self.par_button = QPushButton("📄 Cargar PAR")
@@ -270,12 +302,16 @@ class PulsarGUISprint2(QWidget):
 
         self.file_list = QListWidget()
         layout.addWidget(self.file_list)
-
+        # ---------------------------------------------------------------
+        # 2. Preparación de datos
+        # ---------------------------------------------------------------
         self.merge_button = QPushButton("🚀 Unificar Fotones")
         self.merge_button.setStyleSheet("background-color: #f72585; color: white;")
         self.merge_button.clicked.connect(self.process_photons)
         layout.addWidget(self.merge_button)
-
+        # ---------------------------------------------------------------
+        # 3. Análisis
+        # ---------------------------------------------------------------
         self.histogram_button = QPushButton("🌌 Generar Histograma 2D RA–DEC")
         self.histogram_button.setStyleSheet("background-color: #2ecc71; color: white;")
         self.histogram_button.clicked.connect(self.plot_histogram)
@@ -285,7 +321,9 @@ class PulsarGUISprint2(QWidget):
         self.phase_button.setStyleSheet("background-color: #f39c12; color: white;")
         self.phase_button.clicked.connect(self.start_phase_calculation)
         layout.addWidget(self.phase_button)
-
+        # ---------------------------------------------------------------
+        # Estado
+        # ---------------------------------------------------------------
         limitation = QLabel(
             "Nota Sprint 2: la unificación combina la tabla de eventos y conserva las "
             "extensiones del primer FITS, pero no fusiona GTI de archivos adicionales. "
