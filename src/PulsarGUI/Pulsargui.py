@@ -135,6 +135,51 @@ def _time_metadata(header: fits.Header) -> dict[str, str]:
         for key in TIME_HEADER_KEYS
         if key in header and str(header[key]).strip()
     }
+    
+def _assert_time_metadata_compatible(paths: list[Path]) -> None:
+    reference: dict[str, str] | None = None
+    reference_name = ""
+
+    for path in paths:
+        with fits.open(path, memmap=False) as hdul:
+            current = _time_metadata(hdul[1].header)
+
+        if reference is None:
+            reference = current
+            reference_name = path.name
+            continue
+
+        for key in TIME_HEADER_KEYS:
+            left = reference.get(key)
+            right = current.get(key)
+            if left is not None and right is not None and left.upper() != right.upper():
+                raise ValueError(
+                    f"Metadatos temporales incompatibles: {key}={left!r} en "
+                    f"{reference_name} y {key}={right!r} en {path.name}."
+                )
+                
+def _mjd_reference(header: fits.Header) -> float:
+    if "MJDREF" in header:
+        return float(header["MJDREF"])
+
+    if "MJDREFI" in header or "MJDREFF" in header:
+        return float(header.get("MJDREFI", 0.0)) + float(header.get("MJDREFF", 0.0))
+
+    raise ValueError("El FITS no contiene MJDREF ni MJDREFI/MJDREFF.")
+
+def event_times_to_mjd(times: np.ndarray, header: fits.Header) -> np.ndarray:
+    """Convierte TIME a MJD solo para presentación/validación, sin modificar el FITS."""
+    mjdref = _mjd_reference(header)
+    timezero = float(header.get("TIMEZERO", 0.0))
+    unit_name = str(header.get("TIMEUNIT", "s")).strip() or "s"
+
+    try:
+        factor_days = (1.0 * u.Unit(unit_name)).to_value(u.day)
+    except Exception as exc:
+        raise ValueError(f"TIMEUNIT={unit_name!r} no se pudo interpretar: {exc}") from exc
+
+    return mjdref + (np.asarray(times, dtype=float) + timezero) * factor_days
+
 # ---------------------------------------------------------------------------
 # Unificación EVENTS + GTI
 # ---------------------------------------------------------------------------
