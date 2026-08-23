@@ -15,7 +15,7 @@ from PulsarGUI.Pulsargui import (
 
 
 def crear_fits_eventos(ruta: Path, filas: int = 3, incluir_energy: bool = True):
-    """Crea un FITS pequeño y controlado para las pruebas."""
+    """Crea un FITS pequeño y controlado para las pruebas, incluyendo la extensión GTI."""
     data = {
         "TIME": [float(i) for i in range(filas)],
         "RA": [80.0 + i for i in range(filas)],
@@ -29,10 +29,13 @@ def crear_fits_eventos(ruta: Path, filas: int = 3, incluir_energy: bool = True):
 
     primary_hdu = fits.PrimaryHDU()
     events_hdu = fits.BinTableHDU(tabla, name="EVENTS")
+    
+    # Crear extensión GTI requerida para la validación
+    gti_tabla = Table({"START": [0.0], "STOP": [10.0]})
+    gti_hdu = fits.BinTableHDU(gti_tabla, name="GTI")
 
-    fits.HDUList([primary_hdu, events_hdu]).writeto(ruta, overwrite=True)
-
-
+    fits.HDUList([primary_hdu, events_hdu, gti_hdu]).writeto(ruta, overwrite=True)
+    
 def test_par_valido(tmp_path):
     par = tmp_path / "pulsar.par"
     par.write_text("PSR J1234+5678\nF0 1.0\n", encoding="utf-8")
@@ -93,18 +96,20 @@ def test_unificacion_de_dos_fits(tmp_path):
     )
 
 
-def test_comando_fermiphase():
+def test_comando_fermiphase(monkeypatch):
+    # Simular la presencia del ejecutable para evitar FileNotFoundError si no está instalado
+    monkeypatch.setattr("PulsarGUI.Pulsargui.find_fermiphase_executable", lambda: "fermiphase")
+    
     comando = build_fermiphase_command("eventos.fits", "pulsar.par")
 
     assert comando == [
         "fermiphase",
-        "--addphase",
         "eventos.fits",
         "pulsar.par",
         "CALC",
+        "--addphase",
     ]
-
-
+    
 def test_has_column(tmp_path):
     archivo = tmp_path / "fotones.fits"
     crear_fits_eventos(archivo)
