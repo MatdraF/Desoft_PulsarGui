@@ -36,17 +36,12 @@ FT2_REQUIRED_COLUMNS = {"START", "STOP", "SC_POSITION"}
 TIME_HEADER_KEYS = ("TIMESYS", "TIMEREF", "TIMEUNIT")
 EXTERNAL_PROCESS_TIMEOUT_S = 15 * 60
 
+
 # ---------------------------------------------------------------------------
 # Validación de archivos
 # ---------------------------------------------------------------------------
 
-
 def validate_par_file(path: str | Path) -> tuple[bool, str]:
-    """Validación básica de un archivo de parámetros .par.
-
-    En Sprint 2 no se intenta interpretar todo el modelo de timing: se comprueba
-    que exista, tenga extensión .par y no esté vacío.
-    """
     file_path = Path(path)
 
     if not file_path.exists() or not file_path.is_file():
@@ -57,6 +52,7 @@ def validate_par_file(path: str | Path) -> tuple[bool, str]:
         return False, "El archivo PAR está vacío."
 
     return True, "Archivo PAR válido."
+
 
 def _get_hdu1_columns(path: str | Path) -> tuple[bool, set[str] | None, str]:
     file_path = Path(path)
@@ -70,16 +66,27 @@ def _get_hdu1_columns(path: str | Path) -> tuple[bool, set[str] | None, str]:
         with fits.open(file_path, memmap=False) as hdul:
             if len(hdul) < 2:
                 return False, None, "El FITS no contiene una HDU 1 tabular."
+
             columns = getattr(hdul[1], "columns", None)
             if columns is None or columns.names is None:
                 return False, None, "La HDU 1 no contiene columnas tabulares."
+
             names = {str(name).upper() for name in columns.names}
             return True, names, "FITS legible."
+
     except Exception as exc:
         return False, None, f"No se pudo leer el FITS: {exc}"
 
+
+def _find_hdu_index(hdul: fits.HDUList, name: str) -> int | None:
+    target = name.upper()
+    for index, hdu in enumerate(hdul):
+        if str(getattr(hdu, "name", "")).upper() == target:
+            return index
+    return None
+
+
 def validate_photon_fits(path: str | Path) -> tuple[bool, str]:
-    """Comprueba que un FITS de eventos tenga columnas mínimas usadas por la GUI."""
     ok, columns, message = _get_hdu1_columns(path)
     if not ok or columns is None:
         return False, message
@@ -114,7 +121,7 @@ def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
     ok, columns, message = _get_hdu1_columns(path)
     if not ok or columns is None:
         return False, message
-    
+
     missing = sorted(FT2_REQUIRED_COLUMNS - columns)
     if missing:
         return False, "El FITS de nave no parece un FT2 de Fermi. Faltan: " + ", ".join(missing)
@@ -129,13 +136,15 @@ def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Tiempo y compatibilidad
 # ---------------------------------------------------------------------------
+
 def _time_metadata(header: fits.Header) -> dict[str, str]:
     return {
         key: str(header[key]).strip()
         for key in TIME_HEADER_KEYS
         if key in header and str(header[key]).strip()
     }
-    
+
+
 def _assert_time_metadata_compatible(paths: list[Path]) -> None:
     reference: dict[str, str] | None = None
     reference_name = ""
@@ -157,7 +166,28 @@ def _assert_time_metadata_compatible(paths: list[Path]) -> None:
                     f"Metadatos temporales incompatibles: {key}={left!r} en "
                     f"{reference_name} y {key}={right!r} en {path.name}."
                 )
-                
+
+
+def detect_fermi_time_reference(path: str | Path) -> str:
+    """Clasifica el sistema temporal del FT1 según TIMESYS/TIMEREF."""
+    with fits.open(path, memmap=False) as hdul:
+        header = hdul[1].header
+        timesys = str(header.get("TIMESYS", "")).strip().upper()
+        timeref = str(header.get("TIMEREF", "")).strip().upper()
+
+    if timesys == "TT" and timeref == "LOCAL":
+        return "raw"
+    if timesys == "TT" and timeref == "GEOCENTER":
+        return "geocentric"
+    if timesys == "TDB" and timeref == "SOLARSYSTEM":
+        return "barycentric"
+
+    raise ValueError(
+        "No se reconoce la referencia temporal del FITS: "
+        f"TIMESYS={timesys!r}, TIMEREF={timeref!r}."
+    )
+
+
 def _mjd_reference(header: fits.Header) -> float:
     if "MJDREF" in header:
         return float(header["MJDREF"])
@@ -166,6 +196,7 @@ def _mjd_reference(header: fits.Header) -> float:
         return float(header.get("MJDREFI", 0.0)) + float(header.get("MJDREFF", 0.0))
 
     raise ValueError("El FITS no contiene MJDREF ni MJDREFI/MJDREFF.")
+
 
 def event_times_to_mjd(times: np.ndarray, header: fits.Header) -> np.ndarray:
     """Convierte TIME a MJD solo para presentación/validación, sin modificar el FITS."""
@@ -179,6 +210,7 @@ def event_times_to_mjd(times: np.ndarray, header: fits.Header) -> np.ndarray:
         raise ValueError(f"TIMEUNIT={unit_name!r} no se pudo interpretar: {exc}") from exc
 
     return mjdref + (np.asarray(times, dtype=float) + timezero) * factor_days
+
 
 def _read_par_parameter(path: str | Path, key: str) -> str | None:
     target = key.upper()
@@ -194,6 +226,7 @@ def _read_par_parameter(path: str | Path, key: str) -> str | None:
                 return parts[1]
 
     return None
+
 
 def par_fits_coverage_status(
     par_path: str | Path,
@@ -247,7 +280,8 @@ def par_fits_coverage_status(
         "ok",
         f"PAR y FITS son temporalmente compatibles: {event_start:.5f}–{event_finish:.5f} MJD.",
     )
-    
+
+
 def validate_ft2_temporal_coverage(
     event_path: str | Path,
     ft2_path: str | Path,
@@ -284,9 +318,71 @@ def validate_ft2_temporal_coverage(
 
     except Exception as exc:
         return False, f"No se pudo verificar la cobertura FT2: {exc}"
+
+
 # ---------------------------------------------------------------------------
 # Unificación EVENTS + GTI
 # ---------------------------------------------------------------------------
+
+def _read_events_and_gti(
+    path: Path,
+) -> tuple[Table, Table, fits.Header, fits.Header, str, str]:
+    with fits.open(path, memmap=False) as hdul:
+        gti_index = _find_hdu_index(hdul, "GTI")
+        if gti_index is None:
+            raise ValueError(f"{path.name}: no contiene extensión GTI.")
+
+        return (
+            Table(hdul[1].data),
+            Table(hdul[gti_index].data),
+            hdul[1].header.copy(),
+            hdul[gti_index].header.copy(),
+            hdul[1].name or "EVENTS",
+            hdul[gti_index].name or "GTI",
+        )
+
+
+def merge_overlapping_gti(gti_table: Table) -> Table:
+    """Normaliza GTI solapadas o contiguas a una lista START/STOP no solapada."""
+    starts = np.asarray(gti_table["START"], dtype=float)
+    stops = np.asarray(gti_table["STOP"], dtype=float)
+
+    mask = np.isfinite(starts) & np.isfinite(stops) & (stops >= starts)
+    starts = starts[mask]
+    stops = stops[mask]
+
+    if starts.size == 0:
+        raise ValueError("No hay intervalos GTI válidos.")
+
+    order = np.argsort(starts)
+    starts = starts[order]
+    stops = stops[order]
+
+    merged_starts = [float(starts[0])]
+    merged_stops = [float(stops[0])]
+
+    for start, stop in zip(starts[1:], stops[1:]):
+        start = float(start)
+        stop = float(stop)
+
+        if start <= merged_stops[-1]:
+            merged_stops[-1] = max(merged_stops[-1], stop)
+        else:
+            merged_starts.append(start)
+            merged_stops.append(stop)
+
+    result = Table()
+    result["START"] = np.asarray(merged_starts, dtype=float)
+    result["STOP"] = np.asarray(merged_stops, dtype=float)
+
+    # Preservar unidades cuando existan.
+    if getattr(gti_table["START"], "unit", None) is not None:
+        result["START"].unit = gti_table["START"].unit
+    if getattr(gti_table["STOP"], "unit", None) is not None:
+        result["STOP"].unit = gti_table["STOP"].unit
+
+    return result
+
 
 def merge_event_fits(
     paths: Iterable[str | Path],
@@ -389,9 +485,27 @@ def merge_event_fits(
     )
 
     return output
+
+
 # ---------------------------------------------------------------------------
 # PINT / fermiphase
 # ---------------------------------------------------------------------------
+
+def find_fermiphase_executable() -> str:
+    executable = shutil.which("fermiphase")
+    if executable:
+        return executable
+
+    scripts_dir = Path(sysconfig.get_path("scripts"))
+    for candidate in (scripts_dir / "fermiphase.exe", scripts_dir / "fermiphase"):
+        if candidate.exists() and candidate.is_file():
+            return str(candidate)
+
+    raise FileNotFoundError(
+        "No se encontró fermiphase. "
+        f"También se buscó en la carpeta Scripts de Python: {scripts_dir}"
+    )
+
 
 def build_fermiphase_command(
     fits_path: str | Path,
@@ -416,8 +530,8 @@ def build_fermiphase_command(
 
     return command
 
+
 def has_column(path: str | Path, column_name: str) -> bool:
-    """Indica si la HDU 1 contiene una columna dada."""
     ok, columns, _ = _get_hdu1_columns(path)
     return bool(ok and columns and column_name.upper() in columns)
 
@@ -506,145 +620,391 @@ class ExternalCommandWorker(QThread):
         finally:
             with self._process_lock:
                 self._process = None
+
+
 # ---------------------------------------------------------------------------
 # GUI principal: procesamiento/visualización solamente
 # ---------------------------------------------------------------------------
 
-class PulsarGUISprint2(QWidget):
+class PulsarGUISprint3(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PulsarGUI - Sprint 2")
-        self.resize(680, 650)
 
-        self.files = {
+        self.setWindowTitle("PulsarGUI")
+        self.resize(820, 820)
+
+        self.files: dict[str, str | list[str] | None] = {
             "par": None,
             "spacecraft": None,
             "photons": [],
         }
+
         self.processing_fits: str | None = None
-        self.worker: PhaseWorker | None = None
+        self.phase_fits: str | None = None
+
+        self.worker: ExternalCommandWorker | None = None
+        self.pending_external_output: Path | None = None
+
+        # Solo se eliminan carpetas temporales creadas por esta ejecución.
+        self._temp_dirs: set[Path] = set()
 
         self.build_ui()
         self.update_button_states()
 
-    def build_ui(self):
+    def build_ui(self) -> None:
         self.setStyleSheet(
             """
-            QWidget { background-color: #1a1a2e; color: #e2f3f5; font-family: Arial; }
+            QWidget {
+                background-color: #1a1a2e;
+                color: #e2f3f5;
+                font-family: Arial;
+            }
+            QLabel#sectionTitle {
+                font-size: 13px;
+                font-weight: bold;
+                padding-top: 8px;
+            }
             QPushButton {
-                background-color: #4cc9f0; color: #16213e;
-                padding: 10px; font-weight: bold; border-radius: 5px;
+                background-color: #4cc9f0;
+                color: #16213e;
+                padding: 10px;
+                font-weight: bold;
+                border-radius: 5px;
             }
             QPushButton:hover { background-color: #6bd6ff; }
-            QPushButton:disabled { background-color: #666666; color: #cccccc; }
+            QPushButton:disabled {
+                background-color: #666666;
+                color: #cccccc;
+            }
             QListWidget {
                 background-color: rgba(22, 33, 62, 0.7);
                 border: 2px solid #4cc9f0;
+                border-radius: 4px;
+                padding: 4px;
             }
             """
         )
 
         layout = QVBoxLayout()
 
-        title = QLabel("PulsarGUI — Implementación parcial Sprint 2")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title = QLabel("PulsarGUI")
+        title.setFont(QFont("Arial", 20, QFont.Weight.Bold))
         layout.addWidget(title)
 
         subtitle = QLabel(
-            "Carga y validación de archivos, unificación preliminar de eventos, "
-            "histograma RA–DEC e integración inicial con PINT/fermiphase."
+            "Procesamiento y análisis temporal de datos de púlsares"
         )
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
+
         # ---------------------------------------------------------------
         # 1. Archivos de entrada
         # ---------------------------------------------------------------
+        section_files = QLabel("1. Archivos de entrada")
+        section_files.setObjectName("sectionTitle")
+        layout.addWidget(section_files)
+
         file_buttons = QHBoxLayout()
 
         self.par_button = QPushButton("📄 Cargar PAR")
         self.par_button.clicked.connect(self.load_par)
         file_buttons.addWidget(self.par_button)
 
-        self.spacecraft_button = QPushButton("🛰️ FITS Nave (opcional)")
+        self.spacecraft_button = QPushButton("🛰️ Cargar FT2")
         self.spacecraft_button.clicked.connect(self.load_spacecraft)
         file_buttons.addWidget(self.spacecraft_button)
 
-        self.photons_button = QPushButton("✨ Cargar FITS Fotones")
+        self.photons_button = QPushButton("✨ Cargar FITS de fotones")
         self.photons_button.clicked.connect(self.load_photons)
         file_buttons.addWidget(self.photons_button)
 
         layout.addLayout(file_buttons)
 
         self.file_list = QListWidget()
+        self.file_list.currentItemChanged.connect(
+            lambda _current, _previous: self.update_button_states()
+        )
         layout.addWidget(self.file_list)
+
+        file_management = QHBoxLayout()
+
+        self.remove_file_button = QPushButton("🗑️ Quitar seleccionado")
+        self.remove_file_button.clicked.connect(self.remove_selected_file)
+        file_management.addWidget(self.remove_file_button)
+
+        self.clear_files_button = QPushButton("🧹 Limpiar sesión")
+        self.clear_files_button.clicked.connect(self.clear_loaded_files)
+        file_management.addWidget(self.clear_files_button)
+
+        layout.addLayout(file_management)
+
         # ---------------------------------------------------------------
         # 2. Preparación de datos
         # ---------------------------------------------------------------
-        self.merge_button = QPushButton("🚀 Unificar Fotones")
-        self.merge_button.setStyleSheet("background-color: #f72585; color: white;")
+        section_prepare = QLabel("2. Preparación de datos")
+        section_prepare.setObjectName("sectionTitle")
+        layout.addWidget(section_prepare)
+
+        self.merge_button = QPushButton("🚀 Unificar EVENTS + GTI")
         self.merge_button.clicked.connect(self.process_photons)
         layout.addWidget(self.merge_button)
+
         # ---------------------------------------------------------------
         # 3. Análisis
         # ---------------------------------------------------------------
-        self.histogram_button = QPushButton("🌌 Generar Histograma 2D RA–DEC")
-        self.histogram_button.setStyleSheet("background-color: #2ecc71; color: white;")
+        section_analysis = QLabel("3. Análisis")
+        section_analysis.setObjectName("sectionTitle")
+        layout.addWidget(section_analysis)
+
+        self.histogram_button = QPushButton("🌌 Distribución espacial RA–DEC")
         self.histogram_button.clicked.connect(self.plot_histogram)
         layout.addWidget(self.histogram_button)
 
         self.phase_button = QPushButton("⏱️ Calcular fases con PINT")
-        self.phase_button.setStyleSheet("background-color: #f39c12; color: white;")
         self.phase_button.clicked.connect(self.start_phase_calculation)
         layout.addWidget(self.phase_button)
+
+        self.profile_button = QPushButton("📊 Faseograma + Perfil de Pulso")
+        self.profile_button.clicked.connect(self.plot_phaseogram_and_profile)
+        layout.addWidget(self.profile_button)
+
         # ---------------------------------------------------------------
         # Estado
         # ---------------------------------------------------------------
-        limitation = QLabel(
-            "Nota Sprint 2: la unificación combina la tabla de eventos y conserva las "
-            "extensiones del primer FITS, pero no fusiona GTI de archivos adicionales. "
-            "El faseograma y el perfil de pulso completos quedan para Sprint 3."
+        section_status = QLabel("Estado de procesamiento")
+        section_status.setObjectName("sectionTitle")
+        layout.addWidget(section_status)
+
+        self.status_label = QLabel("Estado: esperando archivos.")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        self.cancel_button = QPushButton("⛔ Cancelar proceso")
+        self.cancel_button.clicked.connect(self.cancel_external_process)
+        layout.addWidget(self.cancel_button)
+
+        note = QLabel(
+            "PulsarGUI conserva los tiempos científicos del FITS durante el cálculo. "
+            "PINT utiliza FT2 cuando los eventos Fermi son TT/LOCAL; la conversión "
+            "a MJD se realiza únicamente para el eje temporal del faseograma. "
+            "El faseograma y el perfil se muestran en dos ciclos consecutivos."
         )
-        limitation.setWordWrap(True)
-        layout.addWidget(limitation)
+        note.setWordWrap(True)
+        layout.addWidget(note)
 
         self.setLayout(layout)
 
-    def show_message(self, title: str, text: str, error: bool = False):
+    def show_message(self, title: str, text: str, error: bool = False) -> None:
         box = QMessageBox(self)
         box.setWindowTitle(title)
         box.setText(text)
-        box.setIcon(QMessageBox.Icon.Critical if error else QMessageBox.Icon.Information)
+        box.setIcon(
+            QMessageBox.Icon.Critical if error else QMessageBox.Icon.Information
+        )
         box.exec()
 
-    def refresh_file_list(self):
+    def refresh_file_list(self) -> None:
+        """Reconstruye la lista y asocia metadatos a cada elemento.
+
+        Los metadatos permiten retirar de forma segura PAR, FT2, FITS de fotones
+        y también descartar resultados derivados sin depender de la posición
+        visual de cada fila.
+        """
         self.file_list.clear()
 
-        if self.files["par"]:
-            self.file_list.addItem("📄 PAR: " + os.path.basename(self.files["par"]))
-        if self.files["spacecraft"]:
-            self.file_list.addItem(
-                "🛰️ SC FITS (opcional): " + os.path.basename(self.files["spacecraft"])
+        par = self.files["par"]
+        spacecraft = self.files["spacecraft"]
+        photons = self.files["photons"]
+
+        def add_entry(text: str, kind: str, path: str | None = None) -> None:
+            item = QListWidgetItem(text)
+            item.setData(
+                Qt.ItemDataRole.UserRole,
+                {"kind": kind, "path": path},
             )
-        for path in self.files["photons"]:
-            self.file_list.addItem("✨ PH FITS: " + os.path.basename(path))
+            self.file_list.addItem(item)
+
+        if isinstance(par, str):
+            add_entry(
+                "📄 PAR: " + os.path.basename(par),
+                "par",
+                par,
+            )
+
+        if isinstance(spacecraft, str):
+            add_entry(
+                "🛰️ FT2: " + os.path.basename(spacecraft),
+                "spacecraft",
+                spacecraft,
+            )
+
+        if isinstance(photons, list):
+            for path in photons:
+                add_entry(
+                    "✨ PH FITS: " + os.path.basename(path),
+                    "photon",
+                    path,
+                )
+
         if self.processing_fits:
-            self.file_list.addItem(
-                "✅ FITS de procesamiento: " + os.path.basename(self.processing_fits)
+            add_entry(
+                "✅ Dataset preparado: " + os.path.basename(self.processing_fits),
+                "processing",
+                self.processing_fits,
             )
 
-    def update_button_states(self):
-        has_photons = len(self.files["photons"]) > 0
-        has_processing_file = self.processing_fits is not None
-        has_par = self.files["par"] is not None
+        if self.phase_fits:
+            add_entry(
+                "📈 Resultado con fases: " + os.path.basename(self.phase_fits),
+                "phase",
+                self.phase_fits,
+            )
 
-        self.merge_button.setEnabled(has_photons)
-        self.histogram_button.setEnabled(has_processing_file)
-        self.phase_button.setEnabled(has_processing_file and has_par)
+    def process_running(self) -> bool:
+        return bool(self.worker is not None and self.worker.isRunning())
 
-    def load_par(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar archivo PAR", "", "PAR files (*.par)"
+    def update_button_states(self) -> None:
+        photons = self.files["photons"]
+
+        has_photons = isinstance(photons, list) and bool(photons)
+        has_processing = self.processing_fits is not None
+        has_par = isinstance(self.files["par"], str)
+        has_any_files = (
+            isinstance(self.files["par"], str)
+            or isinstance(self.files["spacecraft"], str)
+            or has_photons
+            or self.processing_fits is not None
+            or self.phase_fits is not None
         )
+        has_selection = self.file_list.currentItem() is not None
+        running = self.process_running()
+
+        self.par_button.setEnabled(not running)
+        self.spacecraft_button.setEnabled(not running)
+        self.photons_button.setEnabled(not running)
+
+        self.remove_file_button.setEnabled(has_selection and not running)
+        self.clear_files_button.setEnabled(has_any_files and not running)
+
+        self.merge_button.setEnabled(has_photons and not running)
+        self.histogram_button.setEnabled(has_processing and not running)
+        self.phase_button.setEnabled(has_processing and has_par and not running)
+        self.profile_button.setEnabled(self.phase_fits is not None and not running)
+        self.cancel_button.setEnabled(running)
+
+    def invalidate_derived_outputs(self) -> None:
+        self.processing_fits = None
+        self.phase_fits = None
+        self.pending_external_output = None
+
+    def _register_temp_file(self, path: str | Path) -> None:
+        parent = Path(path).resolve().parent
+        temp_root = Path(tempfile.gettempdir()).resolve()
+
+        try:
+            parent.relative_to(temp_root)
+        except ValueError:
+            return
+
+        if parent.name.startswith(("pulsargui_sprint3_", "pulsargui_phase_")):
+            self._temp_dirs.add(parent)
+
+    def remove_selected_file(self) -> None:
+        """Quita de la sesión el elemento seleccionado sin borrar el archivo original."""
+        item = self.file_list.currentItem()
+
+        if item is None:
+            return
+
+        metadata = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(metadata, dict):
+            return
+
+        kind = metadata.get("kind")
+        path = metadata.get("path")
+
+        if kind == "par":
+            self.files["par"] = None
+            # Las fases dependen del modelo temporal.
+            self.phase_fits = None
+            self.status_label.setText("Estado: archivo PAR retirado de la sesión.")
+
+        elif kind == "spacecraft":
+            self.files["spacecraft"] = None
+            # Si las fases fueron obtenidas desde un FT1 crudo, dependían del FT2.
+            self.phase_fits = None
+            self.status_label.setText("Estado: archivo FT2 retirado de la sesión.")
+
+        elif kind == "photon":
+            photons = self.files["photons"]
+            assert isinstance(photons, list)
+
+            if isinstance(path, str) and path in photons:
+                photons.remove(path)
+
+            # El dataset consolidado ya no representa las entradas actuales.
+            self.invalidate_derived_outputs()
+            self.status_label.setText("Estado: FITS de fotones retirado de la sesión.")
+
+        elif kind == "processing":
+            self.processing_fits = None
+            self.phase_fits = None
+            self.status_label.setText("Estado: dataset preparado descartado.")
+
+        elif kind == "phase":
+            self.phase_fits = None
+            self.status_label.setText("Estado: resultado de fases descartado.")
+
+        self.refresh_file_list()
+        self.update_button_states()
+
+    def clear_loaded_files(self) -> None:
+        """Reinicia la sesión para poder trabajar con otro conjunto de archivos.
+
+        No elimina PAR/FT2/PH originales del disco. Solo descarta referencias
+        cargadas y resultados temporales creados por PulsarGUI.
+        """
+        if self.process_running():
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Limpiar sesión",
+            "¿Quieres retirar todos los archivos cargados y comenzar una sesión nueva?\n\n"
+            "Los archivos originales no se eliminarán del disco.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.files["par"] = None
+        self.files["spacecraft"] = None
+
+        photons = self.files["photons"]
+        if isinstance(photons, list):
+            photons.clear()
+
+        self.processing_fits = None
+        self.phase_fits = None
+        self.pending_external_output = None
+
+        # Los temporales generados por la sesión ya no son necesarios.
+        self._cleanup_temp_dirs()
+
+        self.refresh_file_list()
+        self.status_label.setText("Estado: sesión limpia. Puedes cargar un nuevo conjunto de datos.")
+        self.update_button_states()
+
+    def load_par(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo PAR",
+            "",
+            "PAR files (*.par)",
+        )
+
         if not path:
             return
 
@@ -654,29 +1014,41 @@ class PulsarGUISprint2(QWidget):
             return
 
         self.files["par"] = path
+        self.phase_fits = None
+
         self.refresh_file_list()
         self.update_button_states()
 
-    def load_spacecraft(self):
+    def load_spacecraft(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar FITS de nave",
+            "Seleccionar FT2",
             "",
             "FITS files (*.fits *.fit)",
         )
+
         if not path:
             return
 
         ok, message = validate_spacecraft_fits(path)
         if not ok:
-            self.show_message("FITS de nave inválido", message, error=True)
+            self.show_message("FT2 inválido", message, error=True)
             return
 
         self.files["spacecraft"] = path
+
         self.refresh_file_list()
         self.update_button_states()
 
-    def load_photons(self):
+        if "SC_VELOCITY" not in {
+            name.upper()
+            for name in (fits.getdata(path, ext=1).names or [])
+        }:
+            self.status_label.setText(
+                "Estado: FT2 cargado. Aviso: no se detectó SC_VELOCITY."
+            )
+
+    def load_photons(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Seleccionar FITS de fotones",
@@ -684,21 +1056,25 @@ class PulsarGUISprint2(QWidget):
             "FITS files (*.fits *.fit)",
         )
 
-        errors = []
+        errors: list[str] = []
         added = 0
+
+        photons = self.files["photons"]
+        assert isinstance(photons, list)
 
         for path in paths:
             ok, message = validate_photon_fits(path)
+
             if not ok:
                 errors.append(f"{os.path.basename(path)}: {message}")
                 continue
-            if path not in self.files["photons"]:
-                self.files["photons"].append(path)
+
+            if path not in photons:
+                photons.append(path)
                 added += 1
 
-        # Cualquier cambio en las entradas invalida el resultado unificado previo.
         if added:
-            self.processing_fits = None
+            self.invalidate_derived_outputs()
 
         self.refresh_file_list()
         self.update_button_states()
@@ -710,44 +1086,54 @@ class PulsarGUISprint2(QWidget):
                 error=True,
             )
 
-    def process_photons(self):
-        if not self.files["photons"]:
+    def process_photons(self) -> None:
+        photons = self.files["photons"]
+
+        if not isinstance(photons, list) or not photons:
             self.show_message("Aviso", "No hay FITS de fotones cargados.")
             return
 
         try:
-            output = merge_event_fits(self.files["photons"])
+            output = merge_event_fits(photons)
         except Exception as exc:
             self.show_message(
                 "Error de unificación",
-                f"No fue posible unificar los eventos:\n{exc}",
+                f"No fue posible unificar EVENTS + GTI:\n{exc}",
                 error=True,
             )
             return
 
         self.processing_fits = str(output)
-        self.refresh_file_list()
-        self.update_button_states()
-        self.show_message(
-            "Unificación completada",
-            "Se creó un FITS de procesamiento preliminar en:\n"
-            f"{self.processing_fits}\n\n"
-            "Importante: las GTI de archivos adicionales no se fusionan en esta versión.",
+        self.phase_fits = None
+        self._register_temp_file(output)
+
+        self.status_label.setText(
+            "Estado: dataset preparado correctamente (EVENTS + GTI)."
         )
 
-    def plot_histogram(self):
+        self.refresh_file_list()
+        self.update_button_states()
+
+        self.show_message(
+            "Preparación completada",
+            "El dataset de eventos quedó preparado correctamente.",
+        )
+
+    def plot_histogram(self) -> None:
         if not self.processing_fits:
             return
 
         try:
             with fits.open(self.processing_fits, memmap=False) as hdul:
-                data = Table.read(hdul[1])
+                data = Table(hdul[1].data)
 
             fig = plt.figure(figsize=(7, 7))
             ax = fig.add_subplot(111)
-            ax.set_title("Histograma 2D Espacial (RA–DEC)", fontsize=14)
-            ax.set_xlabel("Ascensión Recta (RA)")
-            ax.set_ylabel("Declinación (DEC)")
+
+            ax.set_title("Distribución espacial de eventos — RA vs DEC", fontsize=14)
+            ax.set_xlabel("Ascensión Recta (RA) [deg]")
+            ax.set_ylabel("Declinación (DEC) [deg]")
+
             image = ax.hist2d(
                 data["RA"],
                 data["DEC"],
@@ -755,8 +1141,12 @@ class PulsarGUISprint2(QWidget):
                 cmin=1,
                 cmap="viridis",
             )
+
             fig.colorbar(image[3], ax=ax, label="Número de eventos")
+
+            fig.tight_layout()
             plt.show()
+
         except Exception as exc:
             self.show_message(
                 "Error de visualización",
@@ -764,36 +1154,265 @@ class PulsarGUISprint2(QWidget):
                 error=True,
             )
 
-    def start_phase_calculation(self):
-        if not self.processing_fits or not self.files["par"]:
+    def _start_external_worker(
+        self,
+        operation: str,
+        command: list[str],
+        output: Path | None = None,
+    ) -> None:
+        if self.process_running():
+            self.show_message(
+                "Proceso en curso",
+                "Ya existe un proceso ejecutándose.",
+                error=True,
+            )
             return
 
-        self.phase_button.setEnabled(False)
-        self.phase_button.setText("Calculando fases con PINT... ⏳")
+        self.pending_external_output = output
+        self.worker = ExternalCommandWorker(operation, command)
 
-        self.worker = PhaseWorker(self.files["par"], self.processing_fits)
-        self.worker.finished_with_status.connect(self.finish_phase_calculation)
+        self.worker.completed.connect(self.finish_external_operation)
+        self.worker.finished.connect(self._worker_finished)
+
+        self.status_label.setText(f"Estado: ejecutando {operation}...")
         self.worker.start()
-
-    def finish_phase_calculation(self, success: bool, message: str):
-        self.phase_button.setText("⏱️ Calcular fases con PINT")
         self.update_button_states()
+
+    def start_phase_calculation(self) -> None:
+        if not self.processing_fits:
+            return
+
+        par = self.files["par"]
+        spacecraft = self.files["spacecraft"]
+
+        if not isinstance(par, str):
+            return
+
+        try:
+            source = Path(self.processing_fits)
+
+            # 1) Verificar compatibilidad temporal del modelo, cuando START/FINISH existen.
+            coverage_state, coverage_message = par_fits_coverage_status(par, source)
+
+            if coverage_state == "none":
+                self.show_message(
+                    "Efeméride incompatible",
+                    coverage_message,
+                    error=True,
+                )
+                return
+
+            if coverage_state == "partial":
+                self.show_message(
+                    "Advertencia de cobertura",
+                    coverage_message
+                    + "\n\nEl cálculo continuará, pero las fases fuera del rango de la "
+                    "efeméride no deben considerarse fiables.",
+                )
+
+            # 2) Decidir si PINT necesita FT2 según TIMESYS/TIMEREF.
+            time_state = detect_fermi_time_reference(source)
+            ft2_path: str | None = None
+
+            if time_state == "raw":
+                if not isinstance(spacecraft, str):
+                    self.show_message(
+                        "Falta FT2",
+                        "El FT1 es TT/LOCAL (eventos Fermi crudos). "
+                        "PINT necesita el FT2 para registrar la órbita de Fermi.",
+                        error=True,
+                    )
+                    return
+
+                ok, message = validate_ft2_temporal_coverage(source, spacecraft)
+                if not ok:
+                    self.show_message("Cobertura FT2 insuficiente", message, error=True)
+                    return
+
+                ft2_path = spacecraft
+
+            # Geocéntrico o previamente baricentrado: no pasar FT2 innecesariamente.
+            phase_dir = Path(tempfile.mkdtemp(prefix="pulsargui_phase_"))
+            self._temp_dirs.add(phase_dir)
+
+            output = phase_dir / f"{source.stem}_con_fase{source.suffix}"
+
+            command = build_fermiphase_command(
+                source,
+                par,
+                ft2_path=ft2_path,
+                output_path=output,
+            )
+
+            self.status_label.setText(
+                "Estado: PINT preparado. "
+                + (
+                    "FT1 crudo: se usará FT2 para la órbita de Fermi."
+                    if time_state == "raw"
+                    else f"Referencia temporal detectada: {time_state}."
+                )
+            )
+
+        except Exception as exc:
+            self.show_message(
+                "Error preparando cálculo de fase",
+                str(exc),
+                error=True,
+            )
+            return
+
+        self._start_external_worker("fermiphase", command, output)
+
+    def finish_external_operation(
+        self,
+        operation: str,
+        success: bool,
+        message: str,
+    ) -> None:
+        output = self.pending_external_output
+
+        if success and operation == "fermiphase":
+            if output is None or not output.exists():
+                success = False
+                message = "fermiphase terminó sin error, pero no existe el archivo de salida."
+
+            elif not has_column(output, "PULSE_PHASE"):
+                success = False
+                message = "fermiphase terminó, pero EVENTS no contiene PULSE_PHASE."
+
+            else:
+                self.phase_fits = str(output)
+                message = (
+                    "Cálculo de fases completado correctamente.\n"
+                    "El TIME original del FITS se conserva."
+                )
+
+        self.status_label.setText(
+            f"Estado: {operation} {'completado' if success else 'falló'}."
+        )
+
+        self.refresh_file_list()
+        self.update_button_states()
+
         self.show_message(
-            "PINT / fermiphase" if success else "Error PINT / fermiphase",
+            operation,
             message,
             error=not success,
         )
 
+    def _worker_finished(self) -> None:
+        if self.worker is not None:
+            self.worker.deleteLater()
+
+        self.worker = None
+        self.pending_external_output = None
+        self.update_button_states()
+
+    def cancel_external_process(self) -> None:
+        if self.worker is not None and self.worker.isRunning():
+            self.status_label.setText("Estado: cancelando proceso...")
+            self.worker.cancel()
+
+    def plot_phaseogram_and_profile(self) -> None:
+        if not self.phase_fits:
+            return
+
+        try:
+            with fits.open(self.phase_fits, memmap=False) as hdul:
+                data = Table(hdul[1].data)
+                header = hdul[1].header.copy()
+
+            if "PULSE_PHASE" not in data.colnames or "TIME" not in data.colnames:
+                raise ValueError("El FITS no contiene TIME y PULSE_PHASE.")
+
+            phases = np.asarray(data["PULSE_PHASE"], dtype=float) % 1.0
+            times_original = np.asarray(data["TIME"], dtype=float)
+
+            # MJD se calcula exclusivamente para visualización.
+            times_mjd = event_times_to_mjd(times_original, header)
+
+            mask = np.isfinite(phases) & np.isfinite(times_mjd)
+            phases = phases[mask]
+            times_mjd = times_mjd[mask]
+
+            if phases.size == 0:
+                raise ValueError("No existen fases válidas para visualizar.")
+
+            # Duplicación visual: el segundo ciclo no agrega información física nueva.
+            display_phases = np.concatenate((phases, phases + 1.0))
+            display_times = np.concatenate((times_mjd, times_mjd))
+
+            counts, edges = np.histogram(phases, bins=50, range=(0.0, 1.0))
+            centers = 0.5 * (edges[:-1] + edges[1:])
+
+            profile_x = np.concatenate((centers, centers + 1.0))
+            profile_y = np.concatenate((counts, counts))
+
+            fig = plt.figure(figsize=(10, 8))
+            grid = fig.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.08)
+
+            ax_phase = fig.add_subplot(grid[0])
+            ax_profile = fig.add_subplot(grid[1], sharex=ax_phase)
+
+            ax_phase.scatter(display_phases, display_times, s=1)
+            ax_phase.set_title("Faseograma y Perfil de Pulso — 2 ciclos")
+            ax_phase.set_ylabel("Tiempo (MJD)")
+            ax_phase.set_xlim(0.0, 2.0)
+            ax_phase.grid(True, alpha=0.3)
+            ax_phase.tick_params(axis="x", labelbottom=False)
+
+            ax_profile.step(profile_x, profile_y, where="mid")
+            ax_profile.set_xlabel("Fase de Pulso")
+            ax_profile.set_ylabel("Eventos")
+            ax_profile.set_xlim(0.0, 2.0)
+            ax_profile.grid(True, alpha=0.3)
+
+            fig.tight_layout()
+            plt.show()
+
+        except Exception as exc:
+            self.show_message(
+                "Error de visualización temporal",
+                f"No fue posible generar faseograma/perfil:\n{exc}",
+                error=True,
+            )
+
+    def _cleanup_temp_dirs(self) -> None:
+        for directory in sorted(self._temp_dirs, key=lambda p: len(str(p)), reverse=True):
+            try:
+                if directory.exists():
+                    shutil.rmtree(directory)
+            except OSError:
+                pass
+
+        self._temp_dirs.clear()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.cancel()
+
+            if not self.worker.wait(2000):
+                event.ignore()
+                self.show_message(
+                    "Proceso aún cerrándose",
+                    "Se solicitó detener el proceso. Intenta cerrar nuevamente en unos segundos.",
+                    error=True,
+                )
+                return
+
+        self._cleanup_temp_dirs()
+        event.accept()
 
 
-def graphical_interface():
+def graphical_interface() -> None:
     app = QApplication(sys.argv)
-    window = PulsarGUISprint2()
+    window = PulsarGUISprint3()
     window.show()
     sys.exit(app.exec())
 
 
 if __name__ == "__main__":
     graphical_interface()
+
 
 
