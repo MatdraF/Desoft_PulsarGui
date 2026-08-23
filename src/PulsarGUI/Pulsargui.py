@@ -194,6 +194,59 @@ def _read_par_parameter(path: str | Path, key: str) -> str | None:
                 return parts[1]
 
     return None
+
+def par_fits_coverage_status(
+    par_path: str | Path,
+    fits_path: str | Path,
+) -> tuple[str, str]:
+    """Comprueba START/FINISH del PAR cuando están disponibles.
+
+    Retorna: "ok", "partial", "none" o "unknown".
+    """
+    start_text = _read_par_parameter(par_path, "START")
+    finish_text = _read_par_parameter(par_path, "FINISH")
+
+    if start_text is None or finish_text is None:
+        return "unknown", "El PAR no declara START/FINISH; no se pudo verificar su cobertura temporal."
+
+    try:
+        par_start = float(start_text)
+        par_finish = float(finish_text)
+
+        with fits.open(fits_path, memmap=False) as hdul:
+            data = hdul[1].data
+            if data is None or "TIME" not in data.names:
+                return "unknown", "El FITS no contiene TIME para verificar la cobertura."
+            times = np.asarray(data["TIME"], dtype=float)
+            finite = times[np.isfinite(times)]
+            if finite.size == 0:
+                return "unknown", "El FITS no contiene tiempos finitos."
+            mjd = event_times_to_mjd(finite, hdul[1].header)
+
+        event_start = float(np.min(mjd))
+        event_finish = float(np.max(mjd))
+
+    except Exception as exc:
+        return "unknown", f"No se pudo comparar PAR y FITS: {exc}"
+
+    if event_finish < par_start or event_start > par_finish:
+        return (
+            "none",
+            f"La efeméride no cubre los eventos: PAR {par_start:.5f}–{par_finish:.5f} MJD, "
+            f"FITS {event_start:.5f}–{event_finish:.5f} MJD.",
+        )
+
+    if event_start < par_start or event_finish > par_finish:
+        return (
+            "partial",
+            f"La cobertura es parcial: PAR {par_start:.5f}–{par_finish:.5f} MJD, "
+            f"FITS {event_start:.5f}–{event_finish:.5f} MJD.",
+        )
+
+    return (
+        "ok",
+        f"PAR y FITS son temporalmente compatibles: {event_start:.5f}–{event_finish:.5f} MJD.",
+    )
 # ---------------------------------------------------------------------------
 # Unificación EVENTS + GTI
 # ---------------------------------------------------------------------------
