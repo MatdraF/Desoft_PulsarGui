@@ -25,5 +25,8 @@ jobs:
         pip install pytest astropy PyQt6 matplotlib pint-pulsar
 
     - name: Run tests with pytest
+      env:
+        PYTHONPATH: src
+        QT_QPA_PLATFORM: offscreen
       run: |
         pytest tests/
