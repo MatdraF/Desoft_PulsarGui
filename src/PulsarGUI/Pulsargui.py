@@ -129,7 +129,12 @@ def validate_spacecraft_fits(path: str | Path) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Tiempo y compatibilidad
 # ---------------------------------------------------------------------------
-
+def _time_metadata(header: fits.Header) -> dict[str, str]:
+    return {
+        key: str(header[key]).strip()
+        for key in TIME_HEADER_KEYS
+        if key in header and str(header[key]).strip()
+    }
 # ---------------------------------------------------------------------------
 # Unificación EVENTS + GTI
 # ---------------------------------------------------------------------------
