@@ -247,6 +247,43 @@ def par_fits_coverage_status(
         "ok",
         f"PAR y FITS son temporalmente compatibles: {event_start:.5f}–{event_finish:.5f} MJD.",
     )
+    
+def validate_ft2_temporal_coverage(
+    event_path: str | Path,
+    ft2_path: str | Path,
+) -> tuple[bool, str]:
+    """Exige que FT2 cubra todos los TIME del FT1 crudo."""
+    try:
+        with fits.open(event_path, memmap=False) as hdul:
+            event_times = np.asarray(hdul[1].data["TIME"], dtype=float)
+
+        with fits.open(ft2_path, memmap=False) as hdul:
+            start = np.asarray(hdul[1].data["START"], dtype=float)
+            stop = np.asarray(hdul[1].data["STOP"], dtype=float)
+
+        event_times = event_times[np.isfinite(event_times)]
+        start = start[np.isfinite(start)]
+        stop = stop[np.isfinite(stop)]
+
+        if event_times.size == 0 or start.size == 0 or stop.size == 0:
+            return False, "No hay suficientes tiempos válidos para verificar la cobertura FT2."
+
+        event_min = float(event_times.min())
+        event_max = float(event_times.max())
+        ft2_min = float(start.min())
+        ft2_max = float(stop.max())
+
+        if ft2_min > event_min or ft2_max < event_max:
+            return (
+                False,
+                "El FT2 no cubre todo el intervalo del FT1: "
+                f"FT2={ft2_min:.3f}–{ft2_max:.3f}, FT1={event_min:.3f}–{event_max:.3f} MET.",
+            )
+
+        return True, "El FT2 cubre temporalmente todos los eventos del FT1."
+
+    except Exception as exc:
+        return False, f"No se pudo verificar la cobertura FT2: {exc}"
 # ---------------------------------------------------------------------------
 # Unificación EVENTS + GTI
 # ---------------------------------------------------------------------------
