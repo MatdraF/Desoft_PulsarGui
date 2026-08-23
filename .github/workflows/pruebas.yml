@@ -19,5 +19,7 @@ jobs:
         pip install pytest astropy matplotlib PyQt5 astroquery
         
     - name: Ejecutar Pytest
+      env:
+        PYTHONPATH: .
       run: |
-        pytest tests/
+        python -m pytest tests/
