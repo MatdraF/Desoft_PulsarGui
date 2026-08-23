@@ -180,6 +180,20 @@ def event_times_to_mjd(times: np.ndarray, header: fits.Header) -> np.ndarray:
 
     return mjdref + (np.asarray(times, dtype=float) + timezero) * factor_days
 
+def _read_par_parameter(path: str | Path, key: str) -> str | None:
+    target = key.upper()
+
+    with Path(path).open("r", encoding="utf-8", errors="replace") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.startswith("C "):
+                continue
+
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].upper() == target:
+                return parts[1]
+
+    return None
 # ---------------------------------------------------------------------------
 # Unificación EVENTS + GTI
 # ---------------------------------------------------------------------------
