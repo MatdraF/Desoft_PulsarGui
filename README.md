@@ -1,43 +1,50 @@
 # 🌌 Desoft PulsarGUI
 
-A Python-based graphical application for the initial loading, validation, processing, and visualization of astronomical data associated with pulsar studies.
+A Python-based graphical application for the initial loading, validation, processing, analysis, and visualization of astronomical data associated with pulsar studies.
 
 ---
 
-##  Description
+## Description
 
-**Desoft PulsarGUI** is a desktop application developed in Python that provides a graphical interface for the initial stages of processing astronomical data used in pulsar studies.
+**Desoft PulsarGUI** is a desktop application developed in Python that provides a graphical interface for processing and analyzing astronomical data used in pulsar studies.
 
 The application uses:
 
 * **PyQt6** for the graphical user interface.
 * **Astropy** for astronomical data processing and FITS file handling.
+* **NumPy** for numerical processing and array operations.
 * **Matplotlib** for data visualization.
 * **Pytest** for automated testing.
-* **PINT / fermiphase** for the initial calculation of pulsar event phases.
+* **PINT / fermiphase** for pulsar phase calculation.
 * **Git and GitHub** for version control and collaboration.
 * **GitHub Actions** for automated testing.
 
-The current version corresponds to the partial implementation of **Sprint 2**.
+The current version corresponds to the implementation of **Sprint 3**.
 
 ---
 
-#  Problem
+# Problem
 
-The initial analysis of pulsar data requires working with different astronomical files, such as `.par` parameter files and FITS files containing photon events.
+The analysis of pulsar data requires working with different astronomical files, such as `.par` parameter files, photon FITS files, and spacecraft FT2 files.
 
-These tasks may require command-line tools and specific knowledge about the structure of astronomical data files.
+These tasks may require command-line tools and specific knowledge about the structure, temporal reference, and compatibility of astronomical data files.
 
 **PulsarGUI aims to simplify this process through a graphical interface**, allowing users to:
 
 * Select astronomical data files.
 * Validate `.par` parameter files.
-* Validate FITS files.
-* Check the required event columns.
+* Validate photon FITS files.
+* Validate spacecraft FT2 files.
+* Check required event and GTI columns.
+* Verify temporal metadata compatibility.
+* Verify the temporal coverage between PAR, photon FITS, and FT2 files.
 * Merge events from multiple FITS files.
-* Visualize the spatial distribution of events.
-* Run the initial `fermiphase` processing.
+* Merge and normalize overlapping or contiguous GTI intervals.
+* Visualize the spatial distribution of events using RA–DEC.
+* Calculate pulsar phases using `fermiphase`.
+* Use the FT2 spacecraft file when required for raw Fermi events.
 * Verify the generation of the `PULSE_PHASE` column.
+* Generate a phaseogram and pulse profile over two consecutive cycles.
 
 The application therefore provides a graphical layer over the initial stages of the pulsar data-processing workflow.
 
@@ -52,6 +59,18 @@ The following software is required:
 * Python **3.10 or higher**
 * Git
 * Pip
+
+The Python dependencies are managed through `pyproject.toml` and include:
+
+* `astropy`
+* `matplotlib`
+* `numpy`
+* `PyQt6`
+* `pint-pulsar`
+
+Testing dependencies include:
+
+* `pytest`
 
 ## Clone the repository
 
@@ -107,13 +126,15 @@ With the virtual environment activated, run:
 python src/PulsarGUI/Pulsargui.py
 ```
 
-This will launch the graphical application:
+This will launch the **PulsarGUI** graphical application.
 
-```text
-PulsarGUI - Sprint 2
-```
+The Sprint 3 interface is organized into three main stages:
 
-The application allows users to load the required files and execute the processing and visualization features implemented during Sprint 2.
+1. **Input files**
+2. **Data preparation**
+3. **Analysis**
+
+The application allows users to load PAR, FT2, and photon FITS files, prepare the event dataset, calculate pulsar phases, and generate visualizations.
 
 ---
 
@@ -137,7 +158,7 @@ Alternatively:
 python -m pytest
 ```
 
-The project also includes an initial **GitHub Actions** workflow that automatically runs the tests when changes are pushed to the repository.
+The project also includes a **GitHub Actions** workflow for automatically running tests when changes are pushed to the repository.
 
 ---
 
@@ -145,7 +166,22 @@ The project also includes an initial **GitHub Actions** workflow that automatica
 
 ## File Validation
 
-The user can load a `.par` parameter file and one or more photon FITS files.
+The user can load:
+
+* A `.par` parameter file.
+* One or more photon FITS files.
+* An FT2 spacecraft FITS file.
+
+### PAR validation
+
+The application verifies that:
+
+* The file exists.
+* The file is a regular file.
+* The extension is `.par`.
+* The file is not empty.
+
+### Photon FITS validation
 
 Photon event FITS files must contain the following columns in **HDU 1**:
 
@@ -156,63 +192,175 @@ DEC
 ENERGY
 ```
 
-The application verifies that these required columns are present before continuing with the processing workflow.
+The application also verifies that the FITS contains a valid **GTI** extension with:
+
+```text
+START
+STOP
+```
+
+### Spacecraft FT2 validation
+
+The FT2 file must contain:
+
+```text
+START
+STOP
+SC_POSITION
+```
+
+`SC_VELOCITY` is also checked and a warning is displayed if it is not present.
 
 ---
 
-## FITS Event Merging
+# FITS Event and GTI Merging
 
-The application can preliminarily merge event tables from multiple photon FITS files.
+The application can merge events from multiple photon FITS files.
 
-The current implementation:
+During this process:
 
-* Preserves the Primary HDU from the first file.
-* Preserves the event table header.
-* Preserves additional extensions from the first FITS file.
-* Does not merge GTI extensions from additional files.
+* Events from all input files are combined.
+* Events are sorted according to `TIME`.
+* GTI intervals from the input files are combined.
+* Overlapping or contiguous GTI intervals are normalized.
+* The Primary HDU from the first file is preserved.
+* Relevant FITS headers are preserved.
+* Additional extensions from the first FITS file are preserved.
+* `TSTART` and `TSTOP` are updated according to the resulting GTI coverage.
+
+The resulting dataset is stored as a temporary FITS file and is used as the input for subsequent analysis.
 
 ---
 
-## RA–DEC Visualization
+# Temporal Validation
 
-The application can generate a two-dimensional spatial histogram using:
+Sprint 3 introduces additional validation of the temporal information contained in the astronomical files.
+
+## Time metadata
+
+The application checks compatibility between the temporal metadata of the input FITS files, including:
+
+```text
+TIMESYS
+TIMEREF
+TIMEUNIT
+```
+
+Incompatible temporal metadata between input files prevents the merging process.
+
+## PAR coverage
+
+When `START` and `FINISH` values are available in the `.par` file, the application compares them with the temporal coverage of the photon FITS file.
+
+The result can indicate:
+
+* **OK** — the PAR covers the complete event interval.
+* **Partial** — only part of the event interval is covered.
+* **None** — the PAR does not cover the events.
+* **Unknown** — the available information is insufficient for verification.
+
+---
+
+# FT2 Temporal Coverage
+
+For raw Fermi event data, the application verifies that the spacecraft FT2 file covers the complete temporal interval of the photon FITS file.
+
+The FT2 must cover both:
+
+```text
+Minimum event TIME
+Maximum event TIME
+```
+
+If the FT2 does not cover the complete interval, the phase calculation is not started.
+
+---
+
+# RA–DEC Visualization
+
+The application generates a two-dimensional spatial histogram of the detected events using:
 
 ```text
 RA
 DEC
 ```
 
-This visualization provides a representation of the spatial distribution of detected events.
+The visualization represents the spatial distribution of the detected photon events.
+
+The histogram uses 200 × 200 bins and displays the number of events in each spatial region.
 
 ---
 
-## Pulsar Phase Calculation
+# Pulsar Phase Calculation
 
-When a `.par` file and a processed FITS file are available, the application can run `fermiphase` to calculate the event phases.
+When a processed FITS file and a `.par` file are available, the application can calculate pulsar phases using `fermiphase`.
 
-The process is executed using a **QThread**, preventing the graphical interface from freezing while the calculation is running.
+The calculation is executed through a **QThread**, preventing the graphical interface from freezing while the external process is running.
 
-The application then verifies the presence of the:
+The application determines the temporal reference of the FITS data.
+
+For raw Fermi events with:
+
+```text
+TIMESYS = TT
+TIMEREF = LOCAL
+```
+
+the FT2 spacecraft file is provided to `fermiphase` so that the spacecraft orbit information can be used.
+
+For geocentric or previously barycentric data, the FT2 file is not passed unnecessarily.
+
+After the calculation, the application verifies that the resulting FITS file contains:
 
 ```text
 PULSE_PHASE
 ```
 
-column.
+The original `TIME` values are preserved.
+
+---
+
+# Phaseogram and Pulse Profile
+
+Sprint 3 adds visualization of the pulsar phase information.
+
+Once a FITS file containing `PULSE_PHASE` is available, the application generates:
+
+* A **phaseogram** showing event phase as a function of time.
+* A **pulse profile** showing the number of events as a function of pulse phase.
+
+The phaseogram and profile are displayed over **two consecutive cycles**, from:
+
+```text
+0 to 2
+```
+
+The second cycle is a visual repetition of the first and does not represent additional physical data.
+
+For visualization, event times are converted to MJD without modifying the original FITS `TIME` column.
 
 ---
 
 # Team Members
 
-This project was developed collaboratively by:
+The project was developed collaboratively by:
 
-* **Matias Fernandez**
-* **Ivan Paredes**
-* **Adolfo Ceballos**
-* **Jhoon Ladera**
+- **Matias Fernandez**
+- **Ivan Paredes**
+- **Adolfo Ceballos**
+- **Jhoon Ladera**
+
+## Scrum Team Roles
+
+The responsibilities within the Scrum team are distributed as follows:
+
+- **Product Owner — Ivan Paredes:** responsible for prioritizing the Product Backlog and representing the needs identified with the client.
+
+- **Scrum Master — Matias Fernandez:** responsible for facilitating team organization, Sprint follow-up, and the resolution of impediments.
+
+- **Development Team — Adolfo Ceballos and Jhoon Ladera:** responsible for implementing, integrating, and testing the system's functionalities.
 
 The team uses Git and GitHub for version control, branch management, commits, Pull Requests, and continuous integration through GitHub Actions.
-
 ---
 
 # Client
@@ -223,73 +371,94 @@ The project was developed under the guidance of:
 
 Astrophysicist specializing in **pulsars**, who acts as the project's **client and domain expert**.
 
-The client provides guidance regarding the astronomical requirements and the pulsar data-processing workflow that the application is intended to support.
+The client provides scientific guidance regarding the pulsar data-processing workflow, including the use of `.par` files, photon FITS files, spacecraft FT2 information, and pulsar phase calculations.
 
-The development of PulsarGUI follows the requirements, objectives, and feedback provided throughout the Software Development course.
+His feedback is used to guide functional and scientific decisions and to evaluate the usefulness of the implemented features.
 
 ---
 
 # Current Development Status
 
-**PulsarGUI is currently in Sprint 2**, with a partial implementation of the initial pulsar data-processing workflow.
+**PulsarGUI is currently in Sprint 3**, with an expanded implementation of the pulsar data-processing and analysis workflow.
 
 | Feature                                        | Status                 |
 | ---------------------------------------------- | ---------------------- |
 | `.par` file validation                         | Implemented            |
 | Photon FITS validation                         | Implemented            |
-| Spacecraft FITS validation                     | Implemented            |
+| Spacecraft FT2 validation                      | Implemented            |
 | HDU 1 column validation                        | Implemented            |
 | `TIME`, `RA`, `DEC`, and `ENERGY` verification | Implemented            |
-| Preliminary FITS event merging                 | Implemented            |
+| GTI validation                                 | Implemented            |
+| Temporal metadata compatibility                | Implemented            |
+| PAR/FITS temporal coverage validation          | Implemented            |
+| FT2 temporal coverage validation               | Implemented            |
+| EVENTS merging                                 | Implemented            |
+| GTI merging and normalization                  | Implemented            |
 | RA–DEC 2D histogram                            | Implemented            |
-| `fermiphase` integration                       | Partial                |
-| `PULSE_PHASE` verification                     | Partial                |
+| `fermiphase` integration                       | Implemented            |
+| FT2 integration for raw Fermi events           | Implemented            |
+| `PULSE_PHASE` verification                     | Implemented            |
+| Phaseogram                                     | Implemented            |
+| Pulse profile                                  | Implemented            |
+| Two-cycle visualization                        | Implemented            |
+| External process cancellation                  | Implemented            |
+| Temporary file management                      | Implemented            |
 | Pytest unit tests                              | Implemented            |
-| GitHub Actions                                 | Initial implementation |
-| Automatic barycentric correction               | Pending                |
-| Complete GTI merging                           | Pending                |
-| Complete phaseogram                            | Pending                |
-| Pulse profile                                  | Pending                |
-| Processing optimization                        | Pending                |
+| GitHub Actions                                 | Implemented            |
+| Further processing optimization                | Implemented            |
 
 ---
 
 # Processing Workflow
 
-The current Sprint 2 workflow can be summarized as follows:
+The current Sprint 3 workflow can be summarized as follows:
 
 ```text
-             ┌──────────────┐
-             │  .par File   │
-             └──────┬───────┘
-                    │
-                    ▼
-              PAR Validation
-                    │
-                    │
-┌───────────────────▼──────────────────┐
-│         Photon FITS Files            │
-└───────────────────┬──────────────────┘
-                    │
-                    ▼
-              FITS Validation
-                    │
-                    ▼
-              Event Merging
-                    │
-                    ▼
-          Processing FITS File
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-          ▼                   ▼
-     RA–DEC Histogram     fermiphase
-                              │
-                              ▼
-                       PULSE_PHASE
+                 ┌──────────────┐
+                 │  .par File   │
+                 └──────┬───────┘
+                        │
+                        ▼
+                  PAR Validation
+                        │
+                        │
+        ┌───────────────┴────────────────┐
+        │                                │
+        ▼                                ▼
+┌───────────────────┐          ┌───────────────────┐
+│ Photon FITS Files │          │ Spacecraft FT2    │
+└─────────┬─────────┘          └─────────┬─────────┘
+          │                              │
+          ▼                              │
+    FITS Validation                      │
+          │                              │
+          ▼                              │
+   EVENTS + GTI                         │
+      Merging                            │
+          │                              │
+          ▼                              │
+   Processing FITS                      │
+          │                              │
+          ├───────────────┐              │
+          │               │              │
+          ▼               ▼              │
+     RA–DEC           Temporal           │
+    Histogram         Validation         │
+                          │              │
+                          ▼              │
+                     fermiphase ◄────────┘
+                          │
+                          ▼
+                     PULSE_PHASE
+                          │
+                          ▼
+                ┌───────────────────┐
+                │   Phaseogram +    │
+                │   Pulse Profile   │
+                └───────────────────┘
 ```
 
-The spacecraft FITS file is optional in the current version.
+The FT2 spacecraft file is required when the input event data uses the raw Fermi temporal reference (`TT/LOCAL`) and is validated to ensure that it covers the event interval.
 
 ---
 
@@ -326,17 +495,18 @@ Desoft_PulsarGui/
 
 # Technologies
 
-| Technology        | Purpose                                      |
-| ----------------- | -------------------------------------------- |
-| Python 3.10+      | Main programming language                    |
-| PyQt6             | Graphical user interface                     |
-| Astropy           | Astronomical data processing                 |
-| Matplotlib        | Data visualization                           |
-| Pytest            | Unit testing                                 |
-| PINT / fermiphase | Pulsar phase calculation                     |
-| Git               | Version control                              |
-| GitHub            | Collaboration and repository hosting         |
-| GitHub Actions    | Automated testing and continuous integration |
+| Technology        | Purpose                                        |
+| ----------------- | ---------------------------------------------- |
+| Python 3.10+      | Main programming language                      |
+| PyQt6             | Graphical user interface                       |
+| Astropy           | Astronomical data processing and FITS handling |
+| NumPy             | Numerical and array processing                 |
+| Matplotlib        | Data visualization                             |
+| Pytest            | Unit testing                                   |
+| PINT / fermiphase | Pulsar phase calculation                       |
+| Git               | Version control                                |
+| GitHub            | Collaboration and repository hosting           |
+| GitHub Actions    | Automated testing and continuous integration   |
 
 ---
 
@@ -370,30 +540,28 @@ main
  ├── feature/event-processing
  │
  └── feature/gui
-          │
-          ▼
-     Pull Request
-          │
-          ▼
-         main
+       │
+       ▼
+   Pull Request
+       │
+       ▼
+      main
 ```
 
 ---
 
 # Current Limitations
 
-The current Sprint 2 implementation has several limitations:
+Although Sprint 3 implements a substantially more complete processing workflow, some aspects can still be improved:
 
-* GTI extensions from additional FITS files are not merged.
-* The spacecraft FITS file is not yet used for automatic barycentric correction.
-* The `fermiphase` integration is still in an initial stage.
-* A complete phaseogram has not yet been implemented.
-* The pulse profile has not yet been implemented.
-* Processing optimization is planned for future Sprints.
+* Further optimization of processing for large FITS datasets.
+* Expansion of automated test coverage.
+* Additional validation of astronomical input formats.
+* Further improvements to the graphical interface and user feedback.
+* Additional analysis and visualization features can be incorporated in future Sprints.
 
 ---
 
 # License
 
 This project was developed for academic purposes as part of the **Software Development course**.
-
